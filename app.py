@@ -23,14 +23,21 @@ zip_files = st.file_uploader(
     "ZIPファイル", type=["zip"], accept_multiple_files=True
 )
 
-st.subheader("統合図面管理台帳.xlsx をアップロード（任意）")
+st.subheader("統合図面管理台帳.xlsx をアップロード")
 st.caption(
-    "前回ダウンロードした統合図面管理台帳.xlsxをアップロードすると、今回の結果を"
-    "マージ（同じChild-Parentは上書き）した最新版を出力します。初回はアップロード不要です。"
+    "前回ダウンロードした統合図面管理台帳.xlsxをアップロードしてください。今回の結果を"
+    "マージ（同じChild-Parentは上書き）した最新版を出力します。"
+    "初回はタイトル行のみの空の統合図面管理台帳.xlsxをアップロードしてください。"
+)
+st.download_button(
+    "空の統合図面管理台帳.xlsxをダウンロード（初回用）",
+    data=build_master_workbook([]),
+    file_name="統合図面管理台帳.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 )
 master_upload = st.file_uploader("統合図面管理台帳.xlsx", type=["xlsx"], key="master_upload")
 
-has_input = bool(zip_files)
+has_input = bool(zip_files) and master_upload is not None
 
 run = st.button("統合実行", type="primary", disabled=not has_input)
 
