@@ -17,6 +17,24 @@ SUMMARY_LABELS = (
     "総図形数 合計", "図形変更率 [%]", "入力図面総数", "差分抽出ペア数", "流用率 [%]",
 )
 
+# SUMMARY_LABELS（Ledger-merger 自身の統合Excel出力列名。README.md 記載の契約）に対する、
+# DXF-diff-manager の Summary シート側の実際のラベル文言。DXF-diff-manager 側でラベル
+# 文言が変更されても統合Excelの列名は変えたくないため、ここでエイリアスとして吸収する。
+# 「総図形数 合計」「入力図面総数」はペアリング方式（Type A/B/C）によって文言が変わる
+# （DXF-diff-manager `model/master_ledger.py` の `save_master_to_bytes()` 参照）ため、
+# 複数エイリアスを許容する。
+_SOURCE_LABEL_ALIASES = {
+    "削除図形数 合計": ("削除図形 総数",),
+    "追加図形数 合計": ("追加図形 総数",),
+    "差分図形数 合計": ("変更（追加+削除）図形 総数",),
+    "変更なし図形数 合計": ("変更なし図形 総数",),
+    "総図形数 合計": ("アップロード図面 図形総数", "流用先図面 図形総数"),
+    "図形変更率 [%]": ("図形変更率 [%]",),
+    "入力図面総数": ("アップロード図面総数", "流用先図面総数"),
+    "差分抽出ペア数": ("差分抽出ペア数",),
+    "流用率 [%]": ("流用率 [%]",),
+}
+
 # DXF-diff-manager が出力する台帳以外の固定ファイル名。台帳の候補から除外する。
 NON_LEDGER_FILENAMES = {"diff_labels.xlsx", "unchanged_labels.xlsx"}
 
@@ -32,13 +50,20 @@ class LedgerEntry:
 
 
 def _read_summary_values(ws):
-    values = {}
+    raw = {}
     for row in ws.iter_rows(values_only=True):
         if not row:
             continue
         label = row[0]
-        if label in SUMMARY_LABELS and len(row) > 1:
-            values[label] = row[1]
+        if label and len(row) > 1:
+            raw[label] = row[1]
+
+    values = {}
+    for canonical, aliases in _SOURCE_LABEL_ALIASES.items():
+        for alias in aliases:
+            if alias in raw:
+                values[canonical] = raw[alias]
+                break
     return values
 
 
@@ -83,11 +108,15 @@ def _try_load_ledger(path):
 def find_ledger_files(root_dir):
     """root_dir 以下を再帰的に走査し、台帳ファイルを検出する。
 
-    DXF-diff-manager の出力フォルダはサブフォルダを持たない（葉フォルダ）ため、
-    サブフォルダを持つ中間フォルダ（ZIP展開時のラッパーフォルダ等）は評価対象から
-    除外し、葉フォルダのみを「出力フォルダ」として扱う。macOSのFinder/dittoが
-    ZIP化時に作る `__MACOSX/` ミラーフォルダ（リソースフォーク `._*` を含む）も
-    同名の偽フォルダとして誤検出されるため除外する。
+    「出力フォルダ」は、直下に .xlsx を持ち、かつそれより深い階層のどのフォルダにも
+    .xlsx が存在しない、木構造上もっとも深い地点として判定する（サブフォルダの
+    有無そのものでは判定しない）。DXF-diff-manager の出力フォルダには元DXFを格納する
+    `dxf図面` 等の非xlsxサブフォルダが付随する場合があるが、そのサブフォルダ自体は
+    xlsxを持たないため出力フォルダの深さ判定に影響しない。一方、ZIP展開時のラッパー
+    フォルダ（直下にもxlsxがあるが、より深い階層の各出力フォルダにもxlsxがある場合）は
+    中間ラッパーとして評価対象から除外する。macOSのFinder/dittoがZIP化時に作る
+    `__MACOSX/` ミラーフォルダ（リソースフォーク `._*` を含む）も同名の偽フォルダとして
+    誤検出されるため除外する。
 
     Returns:
         (entries, folders_without_ledger):
@@ -99,22 +128,35 @@ def find_ledger_files(root_dir):
     folders_without_ledger = []
     seen_missing = set()
 
+    xlsx_files_by_dir = {}
     for dirpath, dirnames, filenames in os.walk(root_dir):
         # macOS の Finder/ditto で ZIP 化すると、各フォルダをミラーする
         # __MACOSX/ フォルダ（リソースフォーク ._ファイル名 を含む）が作られる。
         # 同名の偽フォルダとして誤検出されるため、走査対象から除外する。
         dirnames[:] = [d for d in dirnames if d != "__MACOSX"]
 
-        if dirnames or not filenames:
-            continue
-
-        candidates = [
+        xlsx_files = [
             f for f in filenames
             if f.lower().endswith(".xlsx")
             and not f.startswith("~$")
             and not f.startswith("._")
-            and f.lower() not in NON_LEDGER_FILENAMES
         ]
+        if xlsx_files:
+            xlsx_files_by_dir[dirpath] = xlsx_files
+
+    for dirpath, xlsx_files in xlsx_files_by_dir.items():
+        deeper_prefix = dirpath + os.sep
+        has_deeper_ledger_dir = any(
+            other.startswith(deeper_prefix)
+            for other in xlsx_files_by_dir
+            if other != dirpath
+        )
+        if has_deeper_ledger_dir:
+            # より深い階層にもxlsxを持つフォルダがある＝このフォルダは中間ラッパー。
+            # 実際の出力フォルダはさらに深い階層で個別に評価される。
+            continue
+
+        candidates = [f for f in xlsx_files if f.lower() not in NON_LEDGER_FILENAMES]
 
         found = False
         for filename in candidates:
