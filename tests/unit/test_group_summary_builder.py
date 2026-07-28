@@ -37,6 +37,13 @@ def test_parse_group_and_revision():
     )
 
 
+def test_parse_group_and_revision_accepts_new_type_naming():
+    """DXF-diff-manager が2026-07-28以降に自動生成する命名規則（"Type"トークン）にも対応する。"""
+    assert parse_group_and_revision("dxf_diff_results_TypeA_ME24-1001-0_ZC00_405_04") == (
+        "ME24-1001-0_ZC00_405", "04",
+    )
+
+
 def test_parse_group_and_revision_returns_none_for_unrelated_names():
     assert parse_group_and_revision("some_other_folder") is None
     assert parse_group_and_revision("dxf_diff_results_PairA_no_revision_suffix") is None

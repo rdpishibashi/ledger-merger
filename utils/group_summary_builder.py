@@ -3,7 +3,10 @@
 生成するモジュール。Streamlit には依存しない。
 
 DXF-diff-manager のZIPダウンロードファイル名の命名規則
-（dxf_diff_results_Pair{A/B/C}_{指番}_{モジュール}_{サイド}_{リビジョン}）に依存する。
+（dxf_diff_results_Type{A/B/C}_{指番}_{モジュール}_{サイド}_{リビジョン}）に依存する。
+2026-07-28以前に手動で "dxf_diff_results_Pair{A/B/C}_..." と命名されたフォルダ
+（DXF-diff-manager がファイル名自動生成に対応する前の実データ）も引き続き解釈できる
+よう、"Pair"/"Type" どちらのトークンも受け付ける。
 """
 
 import io
@@ -16,7 +19,7 @@ from openpyxl.styles import Font
 
 from utils.ledger_finder import DIFF_LIST_HEADERS
 
-GROUP_REVISION_PATTERN = re.compile(r'^dxf_diff_results_Pair[A-Za-z]_(?P<group>.+)_(?P<revision>\d+)$')
+GROUP_REVISION_PATTERN = re.compile(r'^dxf_diff_results_(?:Pair|Type)[A-Za-z]_(?P<group>.+)_(?P<revision>\d+)$')
 
 _CHILD_COL = DIFF_LIST_HEADERS.index("Child")
 _RECORDED_DATE_COL = DIFF_LIST_HEADERS.index("Recorded Date")
@@ -60,8 +63,9 @@ _PERCENT_LABELS = {"図形変更率 [%]", "流用率 [%]"}
 
 def parse_group_and_revision(package_name):
     """DXF-diff-managerのZIPダウンロードファイル名の命名規則
-    (dxf_diff_results_Pair{A/B/C}_{指番}_{モジュール}_{サイド}_{リビジョン}) に従う
-    フォルダ名から、グループキー（指番_モジュール_サイド）とレビジョン番号を取り出す。
+    (dxf_diff_results_Type{A/B/C}_{指番}_{モジュール}_{サイド}_{リビジョン}、
+    または旧手動命名の dxf_diff_results_Pair{A/B/C}_...) に従うフォルダ名から、
+    グループキー（指番_モジュール_サイド）とレビジョン番号を取り出す。
     一致しない場合は None を返す（この機能の対象外として扱う）。
     """
     match = GROUP_REVISION_PATTERN.match(package_name)
