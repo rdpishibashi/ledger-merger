@@ -4,17 +4,21 @@ Streamlit には依存しない。"""
 import io
 
 from openpyxl import Workbook
-from openpyxl.styles import Font
+from openpyxl.styles import Alignment, Font
 
 from utils.ledger_finder import DIFF_LIST_HEADERS, SUMMARY_LABELS
 
 FIRST_ROW_FONT = Font(color="FF000000")
 OTHER_ROW_FONT = Font(color="FFA6A6A6")
 
+CENTER_ALIGNMENT = Alignment(horizontal="center")
+
 PERCENT_LABELS = {"図形変更率 [%]", "流用率 [%]"}
+ENTITY_LABELS = ("Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities", "Total Entities")
 
 OUTPUT_HEADERS = ("Diff Package",) + DIFF_LIST_HEADERS + SUMMARY_LABELS
 RECORDED_DATE_COL = OUTPUT_HEADERS.index("Recorded Date") + 1
+ENTITY_COLS = [OUTPUT_HEADERS.index(label) + 1 for label in ENTITY_LABELS]
 
 
 def build_merged_workbook(entries):
@@ -26,6 +30,7 @@ def build_merged_workbook(entries):
     ws.append(OUTPUT_HEADERS)
     for cell in ws[1]:
         cell.font = Font(bold=True)
+        cell.alignment = CENTER_ALIGNMENT
     ws.freeze_panes = "A2"
 
     row_idx = 2
@@ -43,11 +48,18 @@ def build_merged_workbook(entries):
 
             ws.cell(row=row_idx, column=RECORDED_DATE_COL).number_format = "YYYY-MM-DD HH:MM:SS"
 
+            # "* Entities" 列（数値/'n/a' 混在）はカンマ区切り＋中央揃いで表示位置を揃える
+            for col in ENTITY_COLS:
+                cell = ws.cell(row=row_idx, column=col)
+                cell.number_format = "#,##0"
+                cell.alignment = CENTER_ALIGNMENT
+
             if row_in_block == 0:
                 for offset, label in enumerate(SUMMARY_LABELS):
                     col = len(DIFF_LIST_HEADERS) + 2 + offset
                     cell = ws.cell(row=row_idx, column=col)
                     cell.number_format = "0.00%" if label in PERCENT_LABELS else "#,##0"
+                    cell.alignment = CENTER_ALIGNMENT
 
             row_idx += 1
 

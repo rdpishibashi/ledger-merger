@@ -254,3 +254,37 @@ def test_merged_workbook_structure():
             row_idx += 1
 
     assert row_idx - 2 == sum(len(e.diff_list_rows) for e in entries)
+
+
+def test_entity_and_summary_columns_are_formatted_and_centered():
+    """"* Entities" 列・Summary9項目（"* 合計" 等）列はカンマ区切り（％項目は0.00%）＋
+    中央揃いで表示する。'n/a' と数値の位置がずれないようにするため。ヘッダー行も
+    中央揃いにする。"""
+    from utils.ledger_merger import ENTITY_COLS, OUTPUT_HEADERS, PERCENT_LABELS
+
+    entries, _missing_folders = find_ledger_files(REAL_DATA_ROOT)
+    merged_bytes = build_merged_workbook(entries)
+
+    wb = openpyxl.load_workbook(__import__("io").BytesIO(merged_bytes))
+    ws = wb["Diff List"]
+
+    for cell in ws[1]:
+        assert cell.alignment.horizontal == "center"
+
+    summary_start_col = len(OUTPUT_HEADERS) - 9 + 1  # SUMMARY_LABELS の先頭列
+    row_idx = 2
+    for entry in entries:
+        for row_in_block in range(len(entry.diff_list_rows)):
+            for col in ENTITY_COLS:
+                cell = ws.cell(row=row_idx, column=col)
+                assert cell.number_format == "#,##0"
+                assert cell.alignment.horizontal == "center"
+
+            if row_in_block == 0:
+                for offset, label in enumerate(OUTPUT_HEADERS[summary_start_col - 1:]):
+                    cell = ws.cell(row=row_idx, column=summary_start_col + offset)
+                    expected_format = "0.00%" if label in PERCENT_LABELS else "#,##0"
+                    assert cell.number_format == expected_format
+                    assert cell.alignment.horizontal == "center"
+
+            row_idx += 1

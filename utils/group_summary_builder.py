@@ -15,9 +15,12 @@ from collections import defaultdict
 from datetime import datetime
 
 from openpyxl import Workbook
-from openpyxl.styles import Font
+from openpyxl.styles import Alignment, Font
 
 from utils.ledger_finder import DIFF_LIST_HEADERS
+
+CENTER_ALIGNMENT = Alignment(horizontal="center")
+_ENTITY_NUMBER_FORMAT = "#,##0"
 
 GROUP_REVISION_PATTERN = re.compile(r'^dxf_diff_results_(?:Pair|Type)[A-Za-z]_(?P<group>.+)_(?P<revision>\d+)$')
 
@@ -192,12 +195,20 @@ def build_group_workbook(group_key, revision_entries):
     diff_ws.append(DIFF_LIST_HEADERS)
     for cell in diff_ws[1]:
         cell.font = Font(bold=True)
+        cell.alignment = CENTER_ALIGNMENT
     diff_ws.freeze_panes = "A2"
 
     recorded_date_col = DIFF_LIST_HEADERS.index("Recorded Date") + 1
+    entity_cols = [DIFF_LIST_HEADERS.index(label) + 1 for label in _ENTITY_COLS]
     for row in aggregate_diff_list_by_child(revision_entries):
         diff_ws.append(row)
-        diff_ws.cell(row=diff_ws.max_row, column=recorded_date_col).number_format = "YYYY-MM-DD HH:MM:SS"
+        row_idx = diff_ws.max_row
+        diff_ws.cell(row=row_idx, column=recorded_date_col).number_format = "YYYY-MM-DD HH:MM:SS"
+        # "* Entities" 列（数値/'n/a' 混在）はカンマ区切り＋中央揃いで表示位置を揃える
+        for col in entity_cols:
+            cell = diff_ws.cell(row=row_idx, column=col)
+            cell.number_format = _ENTITY_NUMBER_FORMAT
+            cell.alignment = CENTER_ALIGNMENT
 
     for col_idx, header in enumerate(DIFF_LIST_HEADERS, start=1):
         width = max(len(str(header)) + 2, 12)

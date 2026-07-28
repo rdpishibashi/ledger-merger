@@ -150,3 +150,30 @@ def test_build_group_workbooks_from_real_fixture():
     from utils.ledger_finder import DIFF_LIST_HEADERS
     assert diff_header == DIFF_LIST_HEADERS
     assert diff_ws.max_row - 1 == 2  # ZMF1_405_01 は2行（Diff Package・合計列は含まない）
+
+
+def test_diff_list_entity_columns_are_formatted_and_centered():
+    """"* Entities" 列はカンマ区切り＋中央揃いで表示する（'n/a' と数値の位置ずれ対策）。
+    ヘッダー行も中央揃いにする。"""
+    import io
+
+    import openpyxl
+
+    from utils.ledger_finder import DIFF_LIST_HEADERS
+
+    entries, _missing = find_ledger_files(REAL_DATA_ROOT)
+    files = build_group_workbooks(entries)
+
+    wb = openpyxl.load_workbook(io.BytesIO(files["ME24-1001-0_ZC00_405_all.xlsx"]))
+    diff_ws = wb["Diff List"]
+
+    for cell in diff_ws[1]:
+        assert cell.alignment.horizontal == "center"
+
+    entity_cols = [DIFF_LIST_HEADERS.index(label) + 1 for label in
+                   ("Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities", "Total Entities")]
+    for row_idx in range(2, diff_ws.max_row + 1):
+        for col in entity_cols:
+            cell = diff_ws.cell(row=row_idx, column=col)
+            assert cell.number_format == "#,##0"
+            assert cell.alignment.horizontal == "center"
