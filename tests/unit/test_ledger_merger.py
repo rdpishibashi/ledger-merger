@@ -15,9 +15,15 @@ Ledger-merger の回帰テスト。
     │       有効な台帳（2行）+ dxf図面/（xlsxを含まないサブフォルダ）付き。
     ├── dxf_diff_results_PairA_ME24-1001-0_ZMB1_405_01/
     │       有効な台帳（3行）。
-    └── dxf_diff_results_PairA_ME24-1001-0_ZMF2_405_01/
-            diff_labels.xlsx / unchanged_labels.xlsx のみで有効な台帳が無い
-            （「台帳が見つからなかったフォルダ」として報告されるべき）。
+    ├── dxf_diff_results_PairA_ME24-1001-0_ZMF2_405_01/
+    │       diff_labels.xlsx / unchanged_labels.xlsx のみで有効な台帳が無い
+    │       （「台帳が見つからなかったフォルダ」として報告されるべき）。
+    └── dxf_diff_results_PairA_ME24-1001-0_ZC00_405_01〜04/
+            "ME24-1001-0_ZC00_405"（指番_モジュール_サイド）1グループ・4レビジョン分。
+            `_02` のみ有効な台帳が2件（ME24-1001-0_ZC00_405.xlsx と
+            ME24-1001-0_na_na.xlsx、後者は図番抽出に失敗した古い実行結果の残骸）。
+            utils.group_summary_builder のグルーピング・重複排除・レビジョン横断
+            集計の回帰テスト（tests/regression/spec/test_group_summary_export.py）に使う。
 """
 
 import os
@@ -43,15 +49,19 @@ MISSING_LEDGER_FOLDER_NAME = "dxf_diff_results_PairA_ME24-1001-0_ZMF2_405_01"
 
 
 def test_find_ledger_files_count_matches_actual_files():
-    """フィクスチャ内の有効な台帳は2件（ZMF1_405_01, ZMB1_405_01）。
-    ZM00_405_all.xlsx（ラッパー直下の集約ファイル）とZMF2_405_01（台帳無し）は
-    entries に含まれない。"""
+    """フィクスチャ内の有効な台帳は7件（ZMF1_405_01, ZMB1_405_01, ZC00_405_01〜04。
+    ただし ZC00_405_02 のみ2件）。ZM00_405_all.xlsx（ラッパー直下の集約ファイル）と
+    ZMF2_405_01（台帳無し）は entries に含まれない。"""
     entries, missing_folders = find_ledger_files(REAL_DATA_ROOT)
 
-    assert len(entries) == 2
+    assert len(entries) == 7
     assert {e.package_name for e in entries} == {
         "dxf_diff_results_PairA_ME24-1001-0_ZMF1_405_01",
         "dxf_diff_results_PairA_ME24-1001-0_ZMB1_405_01",
+        "dxf_diff_results_PairA_ME24-1001-0_ZC00_405_01",
+        "dxf_diff_results_PairA_ME24-1001-0_ZC00_405_02",
+        "dxf_diff_results_PairA_ME24-1001-0_ZC00_405_03",
+        "dxf_diff_results_PairA_ME24-1001-0_ZC00_405_04",
     }
     assert missing_folders == [MISSING_LEDGER_FOLDER_NAME]
 
@@ -137,7 +147,8 @@ def test_rows_without_diff_stats_are_excluded(tmp_path):
 def test_filtered_rows_entity_sums_match_summary_exactly():
     """除外後に残った行の Deleted/Added/Diff/Unchanged/Total Entities の合計が、
     Summary シートの対応する合計値と1件単位の差もなく完全に一致することを、
-    件数だけでなく数値レベルで検証する。"""
+    件数だけでなく数値レベルで検証する。完全新規図面の行は該当列が 'n/a'（文字列）に
+    なるため、DXF-diff-manager 自身の集計と同様に数値以外はスキップして合計する。"""
     from utils.ledger_finder import DIFF_LIST_HEADERS
 
     cols = {h: i for i, h in enumerate(DIFF_LIST_HEADERS)}
@@ -154,7 +165,10 @@ def test_filtered_rows_entity_sums_match_summary_exactly():
 
     for entry in entries:
         for col_name, summary_label in label_by_col.items():
-            computed = sum(row[cols[col_name]] for row in entry.diff_list_rows)
+            computed = sum(
+                row[cols[col_name]] for row in entry.diff_list_rows
+                if isinstance(row[cols[col_name]], (int, float))
+            )
             assert computed == entry.summary_values[summary_label], (
                 f"{entry.package_name}: {summary_label} 不一致"
             )

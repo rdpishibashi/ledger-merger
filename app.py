@@ -1,9 +1,11 @@
+import io
 import tempfile
 import zipfile
 from datetime import datetime
 
 import streamlit as st
 
+from utils.group_summary_builder import build_group_workbooks
 from utils.ledger_finder import find_ledger_files, reconcile_missing_folders
 from utils.ledger_merger import build_merged_workbook
 
@@ -69,6 +71,20 @@ if run:
         st.session_state["merged_count"] = len(all_entries)
         st.session_state["merged_missing_folders"] = all_missing_folders
 
+        # 指番_モジュール_サイド単位のレビジョン横断集計（DXF-diff-managerの
+        # ZIPダウンロードファイル名の命名規則に一致するフォルダのみが対象）
+        group_files = build_group_workbooks(all_entries)
+        if group_files:
+            group_zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(group_zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+                for filename, data in sorted(group_files.items()):
+                    zf.writestr(filename, data)
+            st.session_state["group_summary_zip_bytes"] = group_zip_buffer.getvalue()
+            st.session_state["group_summary_zip_filename"] = f"指番_モジュール_サイド別集計_{timestamp}.zip"
+            st.session_state["group_summary_count"] = len(group_files)
+        else:
+            st.session_state.pop("group_summary_zip_bytes", None)
+
 if "merged_bytes" in st.session_state:
     st.success(f"{st.session_state['merged_count']}個のDiff Packageを統合しました。")
     missing_folders = st.session_state.get("merged_missing_folders") or []
@@ -84,3 +100,16 @@ if "merged_bytes" in st.session_state:
         type="primary",
         width="stretch",
     )
+
+    if "group_summary_zip_bytes" in st.session_state:
+        st.caption(
+            f"指番_モジュール_サイド単位の集計ファイルが"
+            f"{st.session_state['group_summary_count']}件生成されました。"
+        )
+        st.download_button(
+            "指番_モジュール_サイド別集計をダウンロード（ZIP）",
+            data=st.session_state["group_summary_zip_bytes"],
+            file_name=st.session_state["group_summary_zip_filename"],
+            mime="application/zip",
+            width="stretch",
+        )
