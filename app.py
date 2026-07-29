@@ -17,22 +17,38 @@ st.write(
     "1つの Excel ファイルに統合します。"
 )
 
+zip_uploader_version = st.session_state.get("zip_uploader_version", 0)
+use_last_master = st.session_state.get("use_last_master", False)
+
 st.subheader("ZIPファイルをアップロード")
 st.caption("DXF-diff-manager の出力フォルダ群を ZIP 化してアップロードしてください（複数可）。")
 zip_files = st.file_uploader(
-    "ZIPファイル", type=["zip"], accept_multiple_files=True
+    "ZIPファイル",
+    type=["zip"],
+    accept_multiple_files=True,
+    key=f"zip_uploader_{zip_uploader_version}",
 )
 
 st.subheader("統合図面管理台帳.xlsx をアップロード")
-st.caption(
-    "前回ダウンロードした統合図面管理台帳.xlsxをアップロードしてください。今回の結果を"
-    "マージ（同じChild-Parentは上書き）した最新版を出力します。"
-)
-master_upload = st.file_uploader("統合図面管理台帳.xlsx", type=["xlsx"], key="master_upload")
+master_upload = None
+master_bytes_override = None
+if use_last_master and st.session_state.get("master_bytes"):
+    st.info("前回作成した統合図面管理台帳.xlsxを自動的に使用します（再アップロード不要）。")
+    if st.button("別のファイルをアップロードし直す"):
+        st.session_state["use_last_master"] = False
+        st.rerun()
+    master_bytes_override = st.session_state["master_bytes"]
+else:
+    st.caption(
+        "前回ダウンロードした統合図面管理台帳.xlsxをアップロードしてください。今回の結果を"
+        "マージ（同じChild-Parentは上書き）した最新版を出力します。"
+    )
+    master_upload = st.file_uploader("統合図面管理台帳.xlsx", type=["xlsx"], key="master_upload")
 
-has_input = bool(zip_files) and master_upload is not None
+has_input = bool(zip_files) and (master_upload is not None or master_bytes_override is not None)
 
-run = st.button("統合実行", type="primary", disabled=not has_input)
+merge_done = "final_zip_bytes" in st.session_state
+run = st.button("統合実行", type="secondary" if merge_done else "primary", disabled=not has_input)
 
 if run:
     total_sources = len(zip_files)
@@ -73,7 +89,14 @@ if run:
         all_entries.sort(key=lambda e: e.package_name)
 
         previous_master_rows = None
-        if master_upload is not None:
+        if master_bytes_override is not None:
+            previous_master_rows = read_master_rows(master_bytes_override)
+            if previous_master_rows is None:
+                st.warning(
+                    "前回作成した統合図面管理台帳.xlsxを読み込めなかったため、"
+                    "今回分のデータのみで作成します。"
+                )
+        elif master_upload is not None:
             master_upload.seek(0)
             previous_master_rows = read_master_rows(master_upload.read())
             if previous_master_rows is None:
@@ -94,9 +117,12 @@ if run:
                 zf.writestr(f"指番_モジュール_サイド別集計/{filename}", data)
 
         st.session_state["final_zip_bytes"] = final_zip_buffer.getvalue()
+        st.session_state["master_bytes"] = master_bytes
         st.session_state["merged_count"] = len(all_entries)
         st.session_state["merged_missing_folders"] = all_missing_folders
         st.session_state["group_summary_count"] = len(group_files)
+        st.session_state["downloaded_once"] = False
+        st.rerun()
 
 if "final_zip_bytes" in st.session_state:
     st.success(f"{st.session_state['merged_count']}個のDiff Packageを統合しました。")
@@ -107,10 +133,26 @@ if "final_zip_bytes" in st.session_state:
         with st.expander(f"⚠️ 台帳ファイルが見つからなかったフォルダ（{len(missing_folders)}件）"):
             for name in missing_folders:
                 st.write(f"- {name}")
-    st.download_button(
+    downloaded = st.download_button(
         "統合台帳をダウンロード",
         data=st.session_state["final_zip_bytes"],
         file_name="統合図面台帳.zip",
         mime="application/zip",
         type="primary",
     )
+    if downloaded:
+        st.session_state["downloaded_once"] = True
+
+    if st.session_state.get("downloaded_once"):
+        if st.button("新規統合の実行", type="primary"):
+            st.session_state["use_last_master"] = True
+            st.session_state["zip_uploader_version"] = zip_uploader_version + 1
+            for key in (
+                "final_zip_bytes",
+                "merged_count",
+                "merged_missing_folders",
+                "group_summary_count",
+                "downloaded_once",
+            ):
+                st.session_state.pop(key, None)
+            st.rerun()
