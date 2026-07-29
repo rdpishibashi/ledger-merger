@@ -254,9 +254,14 @@ DXF-diff-manager のZIPダウンロードファイル名の命名規則
   描画するため、再実行（rerun）後も表示が保持される。フォルダ名一覧は
   `st.expander("⚠️ 台帳ファイルが見つからなかったフォルダ（N件）")` の中に
   **フォルダ名のみ**（パスやファイル名は含めない）で表示する。
-- ダウンロードボタン（`st.download_button`）の戻り値が `True` の run で
-  `st.session_state["downloaded_once"] = True` を立てる。この値が `True` の間、
-  「新規統合の実行」ボタン（`type="primary"`）を表示する（2026-07-29）。押すと
+- ダウンロードボタン（`st.download_button`）も「統合実行」ボタンと同様、
+  `type = "secondary" if st.session_state.get("downloaded_once") else "primary"`
+  で動的に色分けする。戻り値が `True` の run で `st.session_state["downloaded_once"]
+  = True` を立てたうえで `st.rerun()` し、同一run内での描画順序の制約（ボタンは
+  クリック処理より前に描画される）を回避して即座に白背景へ反映する（2026-07-29、
+  「統合実行」ボタンの色分け修正時に見落としていた箇所。ダウンロード自体は
+  ブラウザ側で即時開始されるため `st.rerun()` で中断されない）。`downloaded_once`
+  が `True` の間、「新規統合の実行」ボタン（`type="primary"`）を表示する。押すと
   `use_last_master=True`・`zip_uploader_version` を +1 にした上で、結果表示系の
   キー（`final_zip_bytes`/`merged_count`/`merged_missing_folders`/
   `group_summary_count`/`downloaded_once`）のみを pop し、`master_bytes` は

@@ -133,15 +133,17 @@ if "final_zip_bytes" in st.session_state:
         with st.expander(f"⚠️ 台帳ファイルが見つからなかったフォルダ（{len(missing_folders)}件）"):
             for name in missing_folders:
                 st.write(f"- {name}")
+    download_done = st.session_state.get("downloaded_once", False)
     downloaded = st.download_button(
         "統合台帳をダウンロード",
         data=st.session_state["final_zip_bytes"],
         file_name="統合図面台帳.zip",
         mime="application/zip",
-        type="primary",
+        type="secondary" if download_done else "primary",
     )
     if downloaded:
         st.session_state["downloaded_once"] = True
+        st.rerun()
 
     if st.session_state.get("downloaded_once"):
         if st.button("新規統合の実行", type="primary"):
