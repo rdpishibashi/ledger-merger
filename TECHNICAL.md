@@ -212,32 +212,58 @@ DXF-diff-manager のZIPダウンロードファイル名の命名規則
 
 ### `app.py`
 
-- 入力は2つ、どちらも必須:
+- 入力は2つ:
   1. `st.file_uploader(accept_multiple_files=True, type=["zip"])` — DXF-diff-manager
      出力フォルダ群のZIP（複数可）。各ZIPは `tempfile.TemporaryDirectory()` に展開し
-     `find_ledger_files` に渡す。
+     `find_ledger_files` に渡す。key は `f"zip_uploader_{zip_uploader_version}"`
+     （`st.session_state["zip_uploader_version"]`）。「新規統合の実行」時にこの
+     バージョンをインクリメントしてウィジェットを再生成し、選択済みファイルを
+     クリアする（2026-07-29）。
   2. `st.file_uploader(type=["xlsx"])` — 前回ダウンロードした `統合図面管理台帳.xlsx`
      （`master_upload`）。`統合図面管理台帳.xlsx` に蓄積機能を持たせた2026-07-28の変更で
      必須化した（任意にすると「アップロードし忘れて履歴が失われる」事故が起きうるため）。
-- 「統合実行」ボタンは `type="primary"` + `disabled=not has_input`
-  （`has_input = bool(zip_files) and master_upload is not None`）。両方揃うまでグレー
-  アウトし、色を手動で変更するコードは書かない（テーマの `primaryColor` に委ねる。
-  `streamlit` スキルの「UIテーマ・ボタン・セクション構成」を参照）。
+     ただし `st.session_state["use_last_master"]` が `True` の間はこのアップローダー
+     自体を表示せず、直近の統合成功時に保存した `st.session_state["master_bytes"]`
+     を `master_bytes_override` として自動的に使用する（再アップロード不要。
+     「新規統合の実行」ボタンで有効化。2026-07-29）。
+- 「統合実行」ボタンは `disabled=not has_input`
+  （`has_input = bool(zip_files) and (master_upload is not None or
+  master_bytes_override is not None)`）に加え、`type` を
+  `"secondary" if "final_zip_bytes" in st.session_state else "primary"` で動的に
+  切り替える（2026-07-29。統合成功でダウンロードボタンが有効になった時点で白背景に
+  戻すため。`streamlit` スキルの「状態に応じたボタンの色分け」を参照）。統合成功時
+  （`else` 分岐の末尾）で `st.rerun()` を呼び、同一run内での描画順序の制約
+  （ボタンは処理より前に描画される）を回避して即座に反映する。台帳0件の失敗分岐は
+  従来どおり `st.rerun()` を呼ばない（エラーメッセージがフラッシュ的に消えるのを
+  避けるため、意図的に非対称）。
 - ZIPファイル1件単位で `st.empty()` + `progress(ratio, text=...)` の
   進捗バーを表示し、完了後 `placeholder.empty()` で消す。
 - 「統合実行」ボタン押下時に全ZIPから `LedgerEntry` と `folders_without_ledger`
   を集約し、1件以上あれば `build_merged_workbook` / `build_master_workbook` /
   `build_group_workbooks` をそれぞれ実行し、`zipfile.ZipFile` で単一ZIP
   `統合図面台帳.zip`（ファイル名固定）にまとめて `st.session_state` に保存する。
-  ダウンロードボタンは1つ（「統合台帳をダウンロード」）のみ。
-- アップロードされた `統合図面管理台帳.xlsx` が読み込めない場合（`read_master_rows`
-  が `None`）は `st.warning()` で表示し、今回分のデータのみで `Master` を作成する。
+  `master_bytes`（統合図面管理台帳.xlsxのbytes）も同時に `st.session_state` に保存し、
+  「新規統合の実行」時の自動使用元を兼ねる。ダウンロードボタンは1つ
+  （「統合台帳をダウンロード」）のみ。
+- アップロードされた（または自動使用された）`統合図面管理台帳.xlsx` が読み込めない
+  場合（`read_master_rows` が `None`）は `st.warning()` で表示し、今回分のデータの
+  みで `Master` を作成する。
 - ZIP自体が開けない場合（`zipfile.BadZipFile`）は `st.warning()` で即時表示する
   （フォルダ名一覧とは別枠。ZIPはフォルダではないため）。
 - 結果（成功件数・台帳が無いフォルダ名一覧・ダウンロードボタン）は `st.session_state` を介して
   描画するため、再実行（rerun）後も表示が保持される。フォルダ名一覧は
   `st.expander("⚠️ 台帳ファイルが見つからなかったフォルダ（N件）")` の中に
   **フォルダ名のみ**（パスやファイル名は含めない）で表示する。
+- ダウンロードボタン（`st.download_button`）の戻り値が `True` の run で
+  `st.session_state["downloaded_once"] = True` を立てる。この値が `True` の間、
+  「新規統合の実行」ボタン（`type="primary"`）を表示する（2026-07-29）。押すと
+  `use_last_master=True`・`zip_uploader_version` を +1 にした上で、結果表示系の
+  キー（`final_zip_bytes`/`merged_count`/`merged_missing_folders`/
+  `group_summary_count`/`downloaded_once`）のみを pop し、`master_bytes` は
+  保持したまま `st.rerun()` する（自動使用の入力元として次回に持ち越すため）。
+- `use_last_master` モード中に「別のファイルをアップロードし直す」ボタンを押すと
+  `use_last_master=False` にして `st.rerun()` し、通常の手動アップロードUIに戻る
+  （ユーザー確認により追加したエスケープハッチ。2026-07-29）。
 - `.streamlit/config.toml` でテーマ（`primaryColor = "#0365C0"` 等、DXF-diff-manager と同一）を指定。
   単一アクションのツールのため `st.subheader("Step N: ...")` のような連番見出しは使わない
   （セクション名のみの見出しに留める）。ボタンの `width` は既定（`'content'`）のまま
@@ -249,9 +275,13 @@ DXF-diff-manager のZIPダウンロードファイル名の命名規則
 | キー | 内容 |
 |---|---|
 | `final_zip_bytes` | `統合図面台帳.zip` のバイト列 |
+| `master_bytes` | 直近の統合成功時に生成した `統合図面管理台帳.xlsx` のバイト列。「新規統合の実行」時の自動使用元を兼ねる（2026-07-29） |
 | `merged_count` | 統合した Diff Package 数 |
 | `merged_missing_folders` | 台帳ファイルが見つからなかったフォルダ名（ベース名のみ）の一覧 |
 | `group_summary_count` | `指番_モジュール_サイド別集計` に生成されたファイル数 |
+| `downloaded_once` | ダウンロードボタンが押されたかどうか。`True` の間だけ「新規統合の実行」ボタンを表示（2026-07-29） |
+| `use_last_master` | `True` の間、統合図面管理台帳.xlsxのアップロード欄を隠し `master_bytes` を自動使用（2026-07-29） |
+| `zip_uploader_version` | ZIPアップローダーの `key` に使うバージョン番号。「新規統合の実行」時に+1してウィジェットを再生成しクリアする（2026-07-29） |
 
 ## macOS の ZIP（Finder/ditto）への対応
 
@@ -372,4 +402,4 @@ DXF-diff-manager の実装から推測される強い相関であり、`差分�
 [README.md](README.md) の「よくある問題」を参照。
 
 ---
-最終更新: 2026-07-28
+最終更新: 2026-07-29
