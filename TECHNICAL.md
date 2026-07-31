@@ -8,8 +8,8 @@ DXF-diff-manager の出力フォルダ群（ZIP化してアップロード）を
 
 | 出力 | 内容 |
 |---|---|
-| `図形変更量詳細.xlsx` | 全 Diff Package を1シートに集約した統合Excel（旧名 `統合_図面親子管理台帳_*.xlsx`）。毎回フレッシュに生成される |
-| `統合図面管理台帳.xlsx` | `Child`-`Parent` ペア単位でユニーク化した `Master` シートのみのExcel。前回分をアップロードすると同じペアは上書き、それ以外は保持して蓄積する |
+| `図形変更量詳細.xlsx` | 全 Diff Package を1シートに集約した統合Excel（旧名 `統合_図面親子管理台帳_*.xlsx`）。毎回フレッシュに生成される。`Child` の前に Diff Package名から逆算した `Sashiban`/`Module`/`Side` 列、最終列に `Diff Package` 自体を持つ |
+| `統合図面管理台帳.xlsx` | `Master`（`Child`-`Parent` ペア単位でユニーク化）・`Work Master`（指番ごとの `Child`-`Parent` ペア単位でユニーク化）・`Summary`（指番ごとの実行時点スナップショットを追記していくログ）の3シート構成。前回分をアップロードすると、Master・Work Masterは同じキーが上書き・それ以外は保持して蓄積、Summaryはキー単位のマージを行わず単純追記する |
 | `指番_モジュール_サイド別集計/` | DXF-diff-manager のZIPダウンロードファイル名の命名規則（`dxf_diff_results_Type{A/B/C}_{指番}_{モジュール}_{サイド}_{リビジョン}`）から検出したグループ単位で、レビジョン横断のSummary+Diff Listを持つExcel（`{指番}_{モジュール}_{サイド}_all.xlsx`）を1グループ1ファイルで出力するフォルダ |
 
 ## ディレクトリ構成
@@ -146,14 +146,20 @@ build_merged_workbook  build_group_workbooks   build_master_workbook(entries,
   - `openpyxl.Workbook()` を直接操作してセル単位で書き込む
     （pandas + xlsxwriter のDataFrame経由ではなく、セルごとのフォント色制御が必要なため素のopenpyxlを採用）。
   - シート名は `Diff List` の1シートのみ。
-  - 出力列（22列、`OUTPUT_HEADERS`）:
-    `Diff Package, Child, Parent, Relation, Title, Subtitle, Recorded Date, Note, Deleted Entities, Added Entities, Diff Entities, Unchanged Entities, Total Entities, 削除図形数 合計, 追加図形数 合計, 差分図形数 合計, 変更なし図形数 合計, 総図形数 合計, 図形変更率 [%], 入力図面総数, 差分抽出ペア数, 流用率 [%]`
+  - 出力列（25列、`OUTPUT_HEADERS`）:
+    `Sashiban, Module, Side, Child, Parent, Relation, Title, Subtitle, Recorded Date, Note, Deleted Entities, Added Entities, Diff Entities, Unchanged Entities, Total Entities, 削除図形数 合計, 追加図形数 合計, 差分図形数 合計, 変更なし図形数 合計, 総図形数 合計, 図形変更率 [%], 入力図面総数, 差分抽出ペア数, 流用率 [%], Diff Package`
+    （2026-07-31、ユーザー要望により `Child` の前に `Sashiban`/`Module`/`Side` を追加し、
+    `Diff Package` を先頭から最終列へ移動。列位置は磁気数値ではなく
+    `OUTPUT_HEADERS.index(...)` で解決するため、列順を変えてもロジック側の修正は不要）。
+  - `Sashiban`/`Module`/`Side` は `utils/group_summary_builder.parse_sashiban_module_side()`
+    で `entry.package_name`（Diff Package名）から逆算する。命名規則に一致しない
+    場合は3列とも空欄（`None`）。
   - 各 `LedgerEntry` ブロック内:
-    - A列（`Diff Package`）: ブロック最初の行のみ黒字（`FF000000`）、以降は薄いグレー（`FFA6A6A6`）。
-    - B〜M列: 元の `Diff List` 行をそのまま転記。`Recorded Date` 列のみ `number_format = "YYYY-MM-DD HH:MM:SS"`。
+    - `Diff Package`列（最終列、`DIFF_PACKAGE_COL`）: ブロック最初の行のみ黒字（`FF000000`）、以降は薄いグレー（`FFA6A6A6`）。
+    - `Sashiban`/`Module`/`Side`〜`Total Entities`列: 元の `Diff List` 行をそのまま転記。`Recorded Date` 列のみ `number_format = "YYYY-MM-DD HH:MM:SS"`。
       `Deleted/Added/Diff/Unchanged/Total Entities`（`ENTITY_COLS`）は `#,##0` ＋中央揃い
       （`'n/a'` と数値が混在するため、表示位置を揃える目的。2026-07-28追加）。
-    - N〜V列（Summaryの9項目）: ブロックの最初の行のみ値を記入。カウント系は `#,##0`、
+    - Summaryの9項目列: ブロックの最初の行のみ値を記入。カウント系は `#,##0`、
       `図形変更率 [%]` と `流用率 [%]` は `0.00%` の `number_format` を適用。中央揃い。2行目以降は空欄。
   - ヘッダー行（1行目）は太字＋中央揃い、`freeze_panes = "A2"`。
 
@@ -166,6 +172,21 @@ DXF-diff-manager のZIPダウンロードファイル名の命名規則
 - `parse_group_and_revision(package_name) -> (group_key, revision) | None`
   - フォルダ名から正規表現でグループキー（`指番_モジュール_サイド`）とレビジョンを取り出す。
     一致しないフォルダ（この命名規則に従っていない過去データ等）は対象外（`None`）。
+- `parse_sashiban_module_side(package_name) -> (sashiban, module, side) | (None, None, None)`
+  - `SASHIBAN_MODULE_SIDE_PATTERN`（DXF-diff-manager `app.py` の `MASTER_FILENAME_PATTERN`
+    と同一の正規表現: 指番=`[A-Z]{2}\d{2}-\d{4}-\d`、モジュール/サイド=`[A-Z0-9]{4|3}`
+    または `"na"`）で、指番・モジュール・サイドを個別に取り出す。`parse_group_and_revision`
+    の `group` は3者を結合した1文字列として緩く取り出すのに対し、こちらはそれぞれの
+    妥当な書式を検証したうえで個別に返す（`utils/ledger_merger.py`・
+    `utils/master_ledger_builder.py` の `Sashiban`/`Module`/`Side`・`Work Master`・
+    `Summary` 生成で使用）。
+- `aggregate_input_drawing_totals_by_sashiban(entries) -> dict[sashiban, int|float]`
+  - `entries` を `group_entries()` でグルーピングし、各グループの「アップロード図面総数」
+    TOTAL値（`{group_key}_all.xlsx` の Summaryシートと同じ計算）を指番ごとに合算する。
+    命名規則に一致しないグループは対象外。値の欠損（`summary_values` にキーが無い等）は
+    0として扱う（`_total_value`/`_revision_value` を経由せず独自に集計しているのは、
+    テスト用の簡易フィクスチャ〈`summary_values={}`〉でも安全に動作させるため）。
+    `utils/master_ledger_builder.compute_summary_rows()` の「指番図面総数」列に使用。
 - `group_entries(entries) -> dict[group_key, list[(revision, LedgerEntry)]]`
   - `package_name` でグルーピングし、レビジョン昇順にソートする。
   - **同一フォルダ（同一 `package_name`）に複数の有効な台帳がある場合、`Diff List` 内の
@@ -195,6 +216,11 @@ DXF-diff-manager のZIPダウンロードファイル名の命名規則
 
 ### `utils/master_ledger_builder.py`
 
+`統合図面管理台帳.xlsx` は `Master`→`Work Master`→`Summary` の3シート構成
+（2026-07-31、`Work Master`・`Summary` を追加）。
+
+#### Master（従来からのシート）
+
 - `extract_unique_child_parent_rows(entries) -> dict[(child, parent), tuple]`
   - 全エントリの `diff_list_rows` から `(Child, Parent)` ペアでユニーク化する
     （同じペアが複数エントリにまたがる場合はどれか1件を採用。データはどれも同じはず
@@ -203,12 +229,77 @@ DXF-diff-manager のZIPダウンロードファイル名の命名規則
   - アップロードされた `統合図面管理台帳.xlsx` の `Master` シートを読み込む。
     シート名・ヘッダー（`DIFF_LIST_HEADERS` と一致）が想定と異なる場合は `None`
     （`app.py` 側で警告表示し、今回分のみで作成する）。
-- `build_master_workbook(entries, previous_master_rows=None) -> bytes`
-  - 今回のユニーク化データと `previous_master_rows`（アップロードされた前回分、無ければ
-    `None`）をマージする。**同じ `(Child, Parent)` は今回のデータで上書き**、前回のみに
-    存在するペアはそのまま保持する（蓄積）。`Child` 昇順でソートし、単一シート `Master`
-    （`DIFF_LIST_HEADERS` 12列）として書き込む。`Deleted/Added/Diff/Unchanged/Total
-    Entities` 列は `#,##0` ＋中央揃い、ヘッダー行も中央揃い。
+
+#### Work Master（指番ごとのChild-Parentユニーク化）
+
+- `WORK_MASTER_HEADERS`: `("Sashiban",) + (DIFF_LIST_HEADERS から Relation を除いたもの)`
+  = `Sashiban, Child, Parent, Title, Subtitle, Recorded Date, Note, Deleted/Added/Diff/
+  Unchanged/Total Entities`（12列）。
+- `extract_unique_work_master_rows(entries) -> dict[(sashiban, child, parent), tuple]`
+  - `entry.package_name` を `parse_sashiban_module_side()` で解決できたエントリのみ対象
+    （指番を逆算できないエントリは除外）。`(sashiban, Child, Parent)` でユニーク化する
+    （同じキーが複数エントリにまたがる場合はどれか1件を採用）。
+- `read_work_master_rows(file_bytes) -> dict[(sashiban, child, parent), tuple] | None`
+  - `read_master_rows` と同様のパターンで `Work Master` シートを読み込む。シートが
+    存在しない（旧バージョンで作成したファイル等）・ヘッダー不一致の場合は `None`
+    （`app.py` 側で今回分のみのフォールバックに使う。Masterと異なりこの場合は
+    警告を出さない——旧バージョンからの移行時に毎回警告が出るのを避けるため）。
+
+`build_master_workbook()` は Master・Work Masterともに、**同じキーは今回のデータで
+上書き**・前回のみに存在するキーはそのまま保持（蓄積）というマージ方式を共有する
+（内部の `_write_ledger_sheet()` ヘルパーで両シートとも書き込む）。
+
+#### Summary（指番ごとの実行時点スナップショットの追記ログ）
+
+Master/Work Masterとは異なり、**キー単位のマージ・上書きを行わない**。今回アップロード
+したZIPのデータのみから算出した指番ごとの集計行を、アップロードされた前回分の末尾に
+単純追記する（同じ指番の行が実行回数分だけ増えていく）。同一指番の推移を実行日時ごとに
+追えるようにするための設計（2026-07-31、ユーザーとの確認により決定。詳細は
+`tests/regression/README.md` 参照）。
+
+- `SUMMARY_HEADERS`: `指番, 削除図形総数, 追加図形総数, 変更図形総数, 図形総数,
+  図形変更率 [%], 差分ペア総数, 指番図面総数, 流用率 [%], 日付`（10列、列名は
+  ユーザー指定によりMaster/Work Masterと異なり日本語）。
+- `compute_summary_rows(entries, run_timestamp) -> list[tuple]`（指番昇順）
+  - **今回のZIP入力（`entries`）のみ**から算出する（Work Masterの累積データは使わない。
+    「指番図面総数」がその性質上、今回入力のみからしか算出できない〈後述〉ため、
+    他の列もスコープを合わせている）。
+  - `extract_unique_work_master_rows(entries)` の結果を指番ごとにグルーピングし、
+    以下を算出:
+    - `削除図形総数`/`追加図形総数`/`図形総数`: それぞれ `Deleted`/`Added`/`Total
+      Entities` 列の合計（非数値〈`'n/a'` 等〉は0として扱う。`_numeric_sum()`）。
+    - `変更図形総数` = `削除図形総数` + `追加図形総数`。
+    - `図形変更率 [%]` = `変更図形総数` / `図形総数`（`図形総数`が0なら0.0）。
+    - `差分ペア総数` = その指番のユニーク `(Child, Parent)` ペア数。
+    - `指番図面総数` = `aggregate_input_drawing_totals_by_sashiban(entries)`
+      （`utils/group_summary_builder.py`）の値。**`指番_モジュール_サイド別集計`
+      フォルダの `*_all.xlsx` と同じ計算を経由するため、この列は今回のZIP入力のみ
+      からしか算出できない**（`指番_モジュール_サイド別集計` 自体が毎回フレッシュに
+      生成される仕様のため）。
+    - `流用率 [%]` = `差分ペア総数` / `指番図面総数`（`指番図面総数`が0なら0.0）。
+  - `run_timestamp` は `build_master_workbook()` 呼び出し時刻（`datetime.now()`）。
+    同一実行内の全指番行で共通。
+- `read_summary_rows(file_bytes) -> list[tuple]`
+  - アップロードされた `統合図面管理台帳.xlsx` の `Summary` シートの全行をそのまま
+    読み込む（`Master`/`Work Master` と異なりキー付き辞書ではなく単純なリスト。
+    ユニーク化しないため）。シートが存在しない・ヘッダー不一致の場合は空リスト
+    `[]` を返す（`None` ではなく、警告なしで「今回分のみ追記」にフォールバックする
+    設計のため）。
+
+#### build_master_workbook
+
+- `build_master_workbook(entries, previous_master_rows=None, previous_work_master_rows=None, previous_summary_rows=None) -> bytes`
+  - Master: `extract_unique_child_parent_rows(entries)` と `previous_master_rows` を
+    マージ（同じキーは上書き）、`Child` 昇順でシート `Master` に書き込む。
+  - Work Master: `extract_unique_work_master_rows(entries)` と `previous_work_master_rows`
+    を同様にマージ、`(Sashiban, Child)` 昇順でシート `Work Master` に書き込む。
+  - Summary: `compute_summary_rows(entries, ...)` の結果を `previous_summary_rows`
+    （リスト）の**末尾に追記**、シート `Summary` に書き込む（マージ・ソートなし、
+    アップロードされた行 → 今回の行、の順）。
+  - 3シートとも `Deleted/Added/Diff/Unchanged/Total Entities` 列（Summaryは
+    `削除/追加/変更図形総数`・`図形総数`・`差分ペア総数`・`指番図面総数`）は
+    `#,##0` ＋中央揃い、`図形変更率 [%]`・`流用率 [%]` は `0.00%` ＋中央揃い、
+    ヘッダー行も中央揃い。
 
 ### `app.py`
 
@@ -245,9 +336,13 @@ DXF-diff-manager のZIPダウンロードファイル名の命名規則
   `master_bytes`（統合図面管理台帳.xlsxのbytes）も同時に `st.session_state` に保存し、
   「新規統合の実行」時の自動使用元を兼ねる。ダウンロードボタンは1つ
   （「統合台帳をダウンロード」）のみ。
-- アップロードされた（または自動使用された）`統合図面管理台帳.xlsx` が読み込めない
-  場合（`read_master_rows` が `None`）は `st.warning()` で表示し、今回分のデータの
-  みで `Master` を作成する。
+- アップロードされた（または自動使用された）`統合図面管理台帳.xlsx` から
+  `read_master_rows`/`read_work_master_rows`/`read_summary_rows` をそれぞれ読み込む。
+  `read_master_rows` が `None` の場合のみ `st.warning()` を表示（`Master` が読めない
+  ことをファイル不正の代表的なシグナルとして扱う）。`read_work_master_rows` が
+  `None`（Work Masterシートが無い旧バージョン等）・`read_summary_rows` が空リスト
+  （Summaryシートが無い等）の場合は、警告なしにそれぞれ今回分のみで作成・追記する
+  （旧バージョンからの移行時に警告が重複して出るのを避けるため）。
 - ZIP自体が開けない場合（`zipfile.BadZipFile`）は `st.warning()` で即時表示する
   （フォルダ名一覧とは別枠。ZIPはフォルダではないため）。
 - 結果（成功件数・台帳が無いフォルダ名一覧・ダウンロードボタン）は `st.session_state` を介して
@@ -391,6 +486,16 @@ DXF-diff-manager の実装から推測される強い相関であり、`差分�
   ファイルをアップロードした場合、`read_master_rows()` がヘッダー不一致で `None` を返し
   今回分のみで作成されるため、履歴を静かに失うことはないが、**間違った履歴を正として
   上書きしてしまう可能性はチェックできない**。
+- `Summary` シートはキー単位のマージを行わず単純追記するため、**同じ統合図面台帳.zipを
+  誤って複数回アップロード→ダウンロードすると、同じ内容の行が重複して増え続ける**
+  （Master/Work Masterのような重複排除は働かない。意図的な設計——実行履歴として
+  すべて残すことを優先しているため）。
+- `Summary` の「指番図面総数」・「流用率 [%]」は今回アップロードしたZIPのみから算出する
+  （`指番_モジュール_サイド別集計` フォルダ自体が毎回フレッシュに生成される仕様のため）。
+  他の列（削除/追加/変更図形総数・図形総数・差分ペア総数）も同じスコープに揃えており、
+  Work Masterの累積データからは算出しない。そのため、複数回に分けて同じ指番のZIPを
+  アップロードした場合、Summaryの各行は「その回にアップロードした分だけ」の値になる
+  （Work Master自体は正しく累積される）。
 
 ## 依存パッケージ
 
@@ -407,4 +512,4 @@ DXF-diff-manager の実装から推測される強い相関であり、`差分�
 [README.md](README.md) の「よくある問題」を参照。
 
 ---
-最終更新: 2026-07-29
+最終更新: 2026-07-31

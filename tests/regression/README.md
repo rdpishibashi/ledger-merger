@@ -15,6 +15,8 @@
 | 指番_モジュール_サイド単位のレビジョン横断集計Excelの生成 | `spec/test_group_summary_export.py` | ユーザー提供の実際の参照ファイル（`ME24-1001-0_ZC00_405_all.xlsx`）のSummaryシートの値と完全一致することを検証。Diff Listシートに `Diff Package`・合計列が含まれないことも確認 |
 | 統合実行結果を単一ZIP「統合図面台帳.zip」にまとめる | `spec/test_unified_zip_bundle.py` | ZIP内に `図形変更量詳細.xlsx`・`統合図面管理台帳.xlsx`・`指番_モジュール_サイド別集計/` が固定名で含まれること、Masterシートが `Child`-`Parent` ペアで重複なく `Child` 昇順であることを検証 |
 | 「統合台帳をダウンロード」実行後に「新規統合の実行」を表示し、直前作成の統合図面管理台帳.xlsxを自動使用する | `spec/test_new_merge_flow.py` | ダウンロード前は「新規統合の実行」ボタンが非表示、ダウンロード後（`downloaded_once`）に表示されることを検証。`use_last_master` モード時は手動アップロード用キャプションが消え、自動使用の案内メッセージと「別のファイルをアップロードし直す」エスケープハッチボタンが表示されることを検証 |
+| 図形変更量詳細.xlsxにSashiban/Module/Side列を追加、Diff Packageを最終列へ移動 | `tests/unit/test_ledger_merger.py::test_merged_workbook_structure` | 25列構成（先頭3列がSashiban/Module/Side、最終列がDiff Package）と、各列の値が`parse_sashiban_module_side()`の逆算結果と一致することを検証 |
+| 統合図面管理台帳.xlsxにWork Master（指番ごとのChild-Parentユニーク化）・Summary（指番ごとの実行時点スナップショット追記ログ）シートを追加 | `spec/test_unified_zip_bundle.py`、`tests/unit/test_master_ledger_builder.py` | Work Masterが`(指番,Child,Parent)`で重複なく指番→Child昇順であること、Summaryがキー単位でマージされず前回分の末尾に単純追記されること（同じ指番の行が実行回数分増える）、Summaryの各列の算出式（削除/追加/変更図形総数・図形総数・図形変更率[%]・差分ペア総数・指番図面総数・流用率[%]）を検証。2026-07-31、当初「指番ごとの小計行をWork Masterに追加」する設計だったが、使い勝手の観点からユーザー判断により撤回し、代わりにSummaryシートとして独立させた経緯あり |
 
 ## App.py（View層）の状態遷移テストについて
 
@@ -32,4 +34,4 @@
 `tests/fixtures/dxf_diff_manager_output/` — 2026-07-28 の不具合調査時に取得した実データの一部（DXF-diff-manager の現行出力形式をそのまま反映）。構成は `tests/unit/test_ledger_merger.py` のモジュールdocstring参照。
 
 ---
-最終更新: 2026-07-29
+最終更新: 2026-07-31

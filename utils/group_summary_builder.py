@@ -24,6 +24,16 @@ _ENTITY_NUMBER_FORMAT = "#,##0"
 
 GROUP_REVISION_PATTERN = re.compile(r'^dxf_diff_results_(?:Pair|Type)[A-Za-z]_(?P<group>.+)_(?P<revision>\d+)$')
 
+# 指番・モジュール・サイドを個別に取り出すための厳密なパターン。DXF-diff-manager
+# 自身の指番/モジュール/サイド入力フォーマット（app.py の SHIBAN_PATTERN /
+# MODULE_PATTERN / SIDE_PATTERN、および両者を結合する MASTER_FILENAME_PATTERN）と
+# 同一の正規表現を用いる。GROUP_REVISION_PATTERN は group を1文字列として緩く
+# 取り出すのに対し、こちらは指番/モジュール/サイドそれぞれの妥当な書式を検証する。
+SASHIBAN_MODULE_SIDE_PATTERN = re.compile(
+    r'^dxf_diff_results_(?:Pair|Type)[A-Za-z]_'
+    r'(?P<shiban>[A-Z]{2}\d{2}-\d{4}-\d)_(?P<module>[A-Z0-9]{4}|na)_(?P<side>[A-Z0-9]{3}|na)_\d+$'
+)
+
 _CHILD_COL = DIFF_LIST_HEADERS.index("Child")
 _RECORDED_DATE_COL = DIFF_LIST_HEADERS.index("Recorded Date")
 _ENTITY_COLS = ("Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities", "Total Entities")
@@ -75,6 +85,18 @@ def parse_group_and_revision(package_name):
     if not match:
         return None
     return match['group'], match['revision']
+
+
+def parse_sashiban_module_side(package_name):
+    """DXF-diff-managerのZIPダウンロードファイル名の命名規則から、指番・モジュール・
+    サイドを個別に取り出す。DXF-diff-manager 側で未入力（"na"）だった場合はその
+    まま文字列 "na" を返す。フォルダ名がこの命名規則に一致しない場合は
+    (None, None, None) を返す（この機能の対象外として扱う）。
+    """
+    match = SASHIBAN_MODULE_SIDE_PATTERN.match(package_name)
+    if not match:
+        return None, None, None
+    return match['shiban'], match['module'], match['side']
 
 
 def _max_recorded_date(entry):
@@ -159,6 +181,32 @@ def _total_value(revision_entries, display_label):
         total_drawings = _total_value(revision_entries, "アップロード図面総数")
         return (total_pairs / total_drawings) if total_drawings else 0.0
     return sum(_revision_value(entry, display_label) for _revision, entry in revision_entries)
+
+
+def aggregate_input_drawing_totals_by_sashiban(entries):
+    """entries（今回のZIP入力から得たLedgerEntryのリスト）を指番_モジュール_サイド
+    単位でグルーピングし、各グループの「アップロード図面総数」TOTAL値
+    （指番_モジュール_サイド別集計フォルダの "{group_key}_all.xlsx" Summaryシートの
+    「アップロード図面総数」行・TOTAL列と同値。"アップロード図面総数" はカウント系
+    ラベルのため _total_value() の実体は単純合計だが、ここでは非数値・欠損値
+    （summary_values にキーが無い場合等）を安全に0として扱うため独自に集計する）を、
+    指番（xx00-0000-0部分）ごとに合算する。命名規則に一致しないグループは対象外。
+
+    Returns:
+        dict[sashiban, int|float]
+    """
+    groups = group_entries(entries)
+    totals_by_sashiban = defaultdict(int)
+    for group_key, revision_entries in groups.items():
+        representative_package_name = revision_entries[0][1].package_name
+        sashiban, _module, _side = parse_sashiban_module_side(representative_package_name)
+        if sashiban is None:
+            continue
+        for _revision, entry in revision_entries:
+            value = entry.summary_values.get(_CANONICAL_BY_DISPLAY_LABEL["アップロード図面総数"])
+            if isinstance(value, (int, float)):
+                totals_by_sashiban[sashiban] += value
+    return dict(totals_by_sashiban)
 
 
 def build_group_workbook(group_key, revision_entries):

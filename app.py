@@ -7,7 +7,12 @@ import streamlit as st
 from utils.group_summary_builder import build_group_workbooks
 from utils.ledger_finder import find_ledger_files, reconcile_missing_folders
 from utils.ledger_merger import build_merged_workbook
-from utils.master_ledger_builder import build_master_workbook, read_master_rows
+from utils.master_ledger_builder import (
+    build_master_workbook,
+    read_master_rows,
+    read_summary_rows,
+    read_work_master_rows,
+)
 
 st.set_page_config(page_title="図面親子管理台帳 統合ツール", page_icon="📑", layout="wide")
 
@@ -89,8 +94,12 @@ if run:
         all_entries.sort(key=lambda e: e.package_name)
 
         previous_master_rows = None
+        previous_work_master_rows = None
+        previous_summary_rows = None
         if master_bytes_override is not None:
             previous_master_rows = read_master_rows(master_bytes_override)
+            previous_work_master_rows = read_work_master_rows(master_bytes_override)
+            previous_summary_rows = read_summary_rows(master_bytes_override)
             if previous_master_rows is None:
                 st.warning(
                     "前回作成した統合図面管理台帳.xlsxを読み込めなかったため、"
@@ -98,7 +107,10 @@ if run:
                 )
         elif master_upload is not None:
             master_upload.seek(0)
-            previous_master_rows = read_master_rows(master_upload.read())
+            master_upload_bytes = master_upload.read()
+            previous_master_rows = read_master_rows(master_upload_bytes)
+            previous_work_master_rows = read_work_master_rows(master_upload_bytes)
+            previous_summary_rows = read_summary_rows(master_upload_bytes)
             if previous_master_rows is None:
                 st.warning(
                     f"アップロードされた統合図面管理台帳.xlsx（{master_upload.name}）を"
@@ -106,7 +118,12 @@ if run:
                 )
 
         merged_bytes = build_merged_workbook(all_entries)
-        master_bytes = build_master_workbook(all_entries, previous_master_rows=previous_master_rows)
+        master_bytes = build_master_workbook(
+            all_entries,
+            previous_master_rows=previous_master_rows,
+            previous_work_master_rows=previous_work_master_rows,
+            previous_summary_rows=previous_summary_rows,
+        )
         group_files = build_group_workbooks(all_entries)
 
         final_zip_buffer = io.BytesIO()
