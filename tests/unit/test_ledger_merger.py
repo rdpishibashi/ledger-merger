@@ -34,6 +34,7 @@ import openpyxl
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
+from utils.group_summary_builder import parse_sashiban_module_side
 from utils.ledger_finder import LedgerEntry, find_ledger_files, reconcile_missing_folders
 from utils.ledger_merger import OUTPUT_HEADERS, build_merged_workbook
 
@@ -234,14 +235,17 @@ def test_merged_workbook_structure():
 
     header = tuple(c.value for c in ws[1])
     assert header == OUTPUT_HEADERS
-    assert len(header) == 22
+    assert len(header) == 25
+    assert header[:3] == ("Sashiban", "Module", "Side")
+    assert header[-1] == "Diff Package"
 
     row_idx = 2
     for entry in entries:
+        sashiban, module, side = parse_sashiban_module_side(entry.package_name)
         for row_in_block in range(len(entry.diff_list_rows)):
             row = ws[row_idx]
-            package_cell = row[0]
-            summary_cells = row[13:]
+            package_cell = row[-1]
+            summary_cells = row[15:-1]
 
             if row_in_block == 0:
                 assert package_cell.font.color.rgb == "FF000000"
@@ -251,6 +255,7 @@ def test_merged_workbook_structure():
                 assert all(c.value is None for c in summary_cells)
 
             assert package_cell.value == entry.package_name
+            assert (row[0].value, row[1].value, row[2].value) == (sashiban, module, side)
             row_idx += 1
 
     assert row_idx - 2 == sum(len(e.diff_list_rows) for e in entries)
@@ -260,6 +265,7 @@ def test_entity_and_summary_columns_are_formatted_and_centered():
     """"* Entities" 列・Summary9項目（"* 合計" 等）列はカンマ区切り（％項目は0.00%）＋
     中央揃いで表示する。'n/a' と数値の位置がずれないようにするため。ヘッダー行も
     中央揃いにする。"""
+    from utils.ledger_finder import SUMMARY_LABELS
     from utils.ledger_merger import ENTITY_COLS, OUTPUT_HEADERS, PERCENT_LABELS
 
     entries, _missing_folders = find_ledger_files(REAL_DATA_ROOT)
@@ -271,7 +277,7 @@ def test_entity_and_summary_columns_are_formatted_and_centered():
     for cell in ws[1]:
         assert cell.alignment.horizontal == "center"
 
-    summary_start_col = len(OUTPUT_HEADERS) - 9 + 1  # SUMMARY_LABELS の先頭列
+    summary_start_col = OUTPUT_HEADERS.index(SUMMARY_LABELS[0]) + 1  # SUMMARY_LABELS の先頭列
     row_idx = 2
     for entry in entries:
         for row_in_block in range(len(entry.diff_list_rows)):
@@ -281,7 +287,7 @@ def test_entity_and_summary_columns_are_formatted_and_centered():
                 assert cell.alignment.horizontal == "center"
 
             if row_in_block == 0:
-                for offset, label in enumerate(OUTPUT_HEADERS[summary_start_col - 1:]):
+                for offset, label in enumerate(SUMMARY_LABELS):
                     cell = ws.cell(row=row_idx, column=summary_start_col + offset)
                     expected_format = "0.00%" if label in PERCENT_LABELS else "#,##0"
                     assert cell.number_format == expected_format

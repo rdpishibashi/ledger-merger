@@ -6,6 +6,7 @@ import io
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font
 
+from utils.group_summary_builder import parse_sashiban_module_side
 from utils.ledger_finder import DIFF_LIST_HEADERS, SUMMARY_LABELS
 
 FIRST_ROW_FONT = Font(color="FF000000")
@@ -16,9 +17,15 @@ CENTER_ALIGNMENT = Alignment(horizontal="center")
 PERCENT_LABELS = {"図形変更率 [%]", "流用率 [%]"}
 ENTITY_LABELS = ("Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities", "Total Entities")
 
-OUTPUT_HEADERS = ("Diff Package",) + DIFF_LIST_HEADERS + SUMMARY_LABELS
+# "Sashiban"/"Module"/"Side" は Diff Package（DXF-diff-manager出力フォルダ名）から
+# parse_sashiban_module_side() で逆算した指番/モジュール/サイド。"Diff Package" 自体は
+# 参照情報として最終列に残す（2026-07-31、ユーザー要望によりChildの前に指番系3列を
+# 追加し、Diff Packageを先頭から最終列へ移動）。
+OUTPUT_HEADERS = ("Sashiban", "Module", "Side") + DIFF_LIST_HEADERS + SUMMARY_LABELS + ("Diff Package",)
 RECORDED_DATE_COL = OUTPUT_HEADERS.index("Recorded Date") + 1
 ENTITY_COLS = [OUTPUT_HEADERS.index(label) + 1 for label in ENTITY_LABELS]
+DIFF_PACKAGE_COL = OUTPUT_HEADERS.index("Diff Package") + 1
+_SUMMARY_COLS = [OUTPUT_HEADERS.index(label) + 1 for label in SUMMARY_LABELS]
 
 
 def build_merged_workbook(entries):
@@ -35,15 +42,17 @@ def build_merged_workbook(entries):
 
     row_idx = 2
     for entry in entries:
+        sashiban, module, side = parse_sashiban_module_side(entry.package_name)
         for row_in_block, diff_row in enumerate(entry.diff_list_rows):
-            row = [entry.package_name, *diff_row]
+            row = [sashiban, module, side, *diff_row]
             if row_in_block == 0:
                 row += [entry.summary_values[label] for label in SUMMARY_LABELS]
             else:
                 row += [None] * len(SUMMARY_LABELS)
+            row.append(entry.package_name)
             ws.append(row)
 
-            package_cell = ws.cell(row=row_idx, column=1)
+            package_cell = ws.cell(row=row_idx, column=DIFF_PACKAGE_COL)
             package_cell.font = FIRST_ROW_FONT if row_in_block == 0 else OTHER_ROW_FONT
 
             ws.cell(row=row_idx, column=RECORDED_DATE_COL).number_format = "YYYY-MM-DD HH:MM:SS"
@@ -55,8 +64,7 @@ def build_merged_workbook(entries):
                 cell.alignment = CENTER_ALIGNMENT
 
             if row_in_block == 0:
-                for offset, label in enumerate(SUMMARY_LABELS):
-                    col = len(DIFF_LIST_HEADERS) + 2 + offset
+                for col, label in zip(_SUMMARY_COLS, SUMMARY_LABELS):
                     cell = ws.cell(row=row_idx, column=col)
                     cell.number_format = "0.00%" if label in PERCENT_LABELS else "#,##0"
                     cell.alignment = CENTER_ALIGNMENT

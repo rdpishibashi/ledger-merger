@@ -15,10 +15,15 @@ DXF-diff-manager の複数の出力フォルダにある台帳ファイル（`Di
 - 台帳ファイルが見つからない出力フォルダはスキップし、フォルダ名のみを一覧表示する（処理全体は継続）
 - 統合実行のたびに `統合図面台帳.zip` を1つ生成し、以下の3種類を含める:
   - **`図形変更量詳細.xlsx`** — 全 Diff Package を1シートに集約した統合Excel
-    （`Diff Package` 列でブロック化。各ブロックの先頭行のみ黒字、それ以外は薄いグレー文字）
-  - **`統合図面管理台帳.xlsx`** — `Child`-`Parent` ペア単位でユニーク化した `Master` シート
-    のみのExcel。前回ダウンロードした同ファイルをアップロードすると、同じペアは今回のデータ
-    で上書きしつつ、それ以外のペアは保持したまま蓄積する
+    （`Diff Package` 列でブロック化。各ブロックの先頭行のみ黒字、それ以外は薄いグレー文字。
+    `Child` の前に Diff Package 名から逆算した `Sashiban`/`Module`/`Side` 列を持ち、
+    `Diff Package` 自体は参照情報として最終列に配置）
+  - **`統合図面管理台帳.xlsx`** — `Master`（`Child`-`Parent` ペア単位でユニーク化）・
+    `Work Master`（指番ごとの `Child`-`Parent` ペア単位でユニーク化）・`Summary`
+    （指番ごとの実行時点の集計値を追記していくログ）の3シート構成。前回ダウンロードした
+    同ファイルをアップロードすると、Master・Work Masterは同じキーが今回のデータで
+    上書きされ、それ以外は保持されたまま蓄積する。Summaryはキー単位のマージを行わず、
+    実行のたびに新しい行を追記する
   - **`指番_モジュール_サイド別集計/`** — DXF-diff-manager のZIPダウンロードファイル名
     （`指番_モジュール_サイド_リビジョン`）単位で、レビジョン横断のSummary・Diff Listを
     まとめたExcelを1グループ1ファイルで格納するフォルダ
@@ -67,18 +72,28 @@ streamlit run app.py
     └── ...（グループごとに1ファイル）
 ```
 
-**`図形変更量詳細.xlsx`**（シート名: `Diff List`、22列）
+**`図形変更量詳細.xlsx`**（シート名: `Diff List`、25列）
 
 | 列 | 内容 |
 |---|---|
-| A | Diff Package（出力フォルダ名） |
-| B〜M | 元の Diff List シートの全列（Child 〜 Total Entities） |
-| N〜V | Summary シートの9項目（各ブロックの先頭行のみ） |
+| A〜C | Sashiban（指番）・Module（モジュール）・Side（サイド）— Diff Package名から逆算 |
+| D〜O | 元の Diff List シートの全列（Child 〜 Total Entities） |
+| P〜X | Summary シートの9項目（各ブロックの先頭行のみ） |
+| Y | Diff Package（出力フォルダ名） |
 
-**`統合図面管理台帳.xlsx`**（シート名: `Master` のみ、12列）
+**`統合図面管理台帳.xlsx`**（`Master`・`Work Master`・`Summary` の3シート）
 
-`図形変更量詳細.xlsx` の Diff List から `Child`-`Parent` ペアでユニーク化し、`Child` の
-昇順で並べたもの（B〜M列と同じ12列構成）。
+- **`Master`**（12列）: Diff Listから `Child`-`Parent` ペアでユニーク化し、`Child` の
+  昇順で並べたもの（`Child, Parent, Relation, Title, Subtitle, Recorded Date, Note,
+  Deleted/Added/Diff/Unchanged/Total Entities`）。
+- **`Work Master`**（12列）: 指番（Diff Package名から逆算）ごとに `Child`-`Parent` ペアで
+  ユニーク化し、指番→`Child` の昇順で並べたもの（`Sashiban, Child, Parent, Title,
+  Subtitle, Recorded Date, Note, Deleted/Added/Diff/Unchanged/Total Entities`。
+  `Relation` は含まない）。指番を逆算できないエントリは対象外。
+- **`Summary`**（10列）: `指番, 削除図形総数, 追加図形総数, 変更図形総数, 図形総数,
+  図形変更率 [%], 差分ペア総数, 指番図面総数, 流用率 [%], 日付`。指番ごとの
+  Work Masterユニークペアから算出した実行時点のスナップショットを、指番でユニーク化
+  せずに追記していく（同じ指番の行が実行回数分だけ増えていく）。
 
 **`指番_モジュール_サイド別集計/{指番}_{モジュール}_{サイド}_all.xlsx`**
 
@@ -102,12 +117,15 @@ ZIPダウンロードファイル名の命名規則（`dxf_diff_results_Type{A/B
     （1行目のヘッダーのみ）を用意してアップロードしてください。「新規統合の実行」
     経由で統合図面管理台帳.xlsxを自動使用している場合はZIPファイルのみで押せます。
 - **アップロードした「統合図面管理台帳.xlsx」が反映されない**
-  → シート名が `Master`、ヘッダー行が想定の12列と一致しているか確認してください。
-    一致しない場合は警告を表示した上で、今回分のデータのみで新規作成します。
+  → `Master` シートの名前・ヘッダー行が想定の12列と一致しているか確認してください。
+    一致しない場合は警告を表示した上で、今回分のデータのみで新規作成します
+    （`Work Master`/`Summary` シートが無い、または構成が想定と異なる場合は、
+    警告なしにそれぞれ今回分のみで作成・追記します。旧バージョンで作成した
+    ファイルとの互換性のための挙動です）。
 
 ## ライセンス
 
 株式会社RDPi所有・改版禁止
 
 ---
-最終更新: 2026-07-29
+最終更新: 2026-07-31

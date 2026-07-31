@@ -16,6 +16,7 @@ from utils.group_summary_builder import (
     build_group_workbooks,
     group_entries,
     parse_group_and_revision,
+    parse_sashiban_module_side,
 )
 from utils.ledger_finder import LedgerEntry, find_ledger_files
 
@@ -47,6 +48,27 @@ def test_parse_group_and_revision_accepts_new_type_naming():
 def test_parse_group_and_revision_returns_none_for_unrelated_names():
     assert parse_group_and_revision("some_other_folder") is None
     assert parse_group_and_revision("dxf_diff_results_PairA_no_revision_suffix") is None
+
+
+def test_parse_sashiban_module_side():
+    assert parse_sashiban_module_side("dxf_diff_results_PairA_ME24-1001-0_ZC00_405_04") == (
+        "ME24-1001-0", "ZC00", "405",
+    )
+    assert parse_sashiban_module_side("dxf_diff_results_TypeB_ME24-1001-0_ZMF1_405_01") == (
+        "ME24-1001-0", "ZMF1", "405",
+    )
+
+
+def test_parse_sashiban_module_side_accepts_na_module_and_side():
+    """DXF-diff-manager でモジュール/サイドが未入力の場合、"na" のまま返す。"""
+    assert parse_sashiban_module_side("dxf_diff_results_TypeA_ME24-1001-0_na_na_01") == (
+        "ME24-1001-0", "na", "na",
+    )
+
+
+def test_parse_sashiban_module_side_returns_none_tuple_for_unrelated_names():
+    assert parse_sashiban_module_side("some_other_folder") == (None, None, None)
+    assert parse_sashiban_module_side("dxf_diff_results_PairA_no_revision_suffix") == (None, None, None)
 
 
 def test_group_entries_picks_latest_recorded_date_when_folder_has_duplicate_ledgers():
