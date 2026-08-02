@@ -29,9 +29,12 @@ GROUP_REVISION_PATTERN = re.compile(r'^dxf_diff_results_(?:Pair|Type)[A-Za-z]_(?
 # MODULE_PATTERN / SIDE_PATTERN、および両者を結合する MASTER_FILENAME_PATTERN）と
 # 同一の正規表現を用いる。GROUP_REVISION_PATTERN は group を1文字列として緩く
 # 取り出すのに対し、こちらは指番/モジュール/サイドそれぞれの妥当な書式を検証する。
+# 末尾のリビジョン番号は2026-08以降DXF-diff-manager側のZIPファイル名から省略される
+# ようになったため任意とする（例: dxf_diff_results_TypeA_ME24-1001-0_ZC00_405）。
 SASHIBAN_MODULE_SIDE_PATTERN = re.compile(
     r'^dxf_diff_results_(?:Pair|Type)[A-Za-z]_'
-    r'(?P<shiban>[A-Z]{2}\d{2}-\d{4}-\d)_(?P<module>[A-Z0-9]{4}|na)_(?P<side>[A-Z0-9]{3}|na)_\d+$'
+    r'(?P<shiban>[A-Z]{2}\d{2}-\d{4}-\d)_(?P<module>[A-Z0-9]{4}|na)_(?P<side>[A-Z0-9]{3}|na)'
+    r'(?:_(?P<revision>\d+))?$'
 )
 
 _CHILD_COL = DIFF_LIST_HEADERS.index("Child")
@@ -77,10 +80,23 @@ _PERCENT_LABELS = {"図形変更率 [%]", "流用率 [%]"}
 def parse_group_and_revision(package_name):
     """DXF-diff-managerのZIPダウンロードファイル名の命名規則
     (dxf_diff_results_Type{A/B/C}_{指番}_{モジュール}_{サイド}_{リビジョン}、
-    または旧手動命名の dxf_diff_results_Pair{A/B/C}_...) に従うフォルダ名から、
-    グループキー（指番_モジュール_サイド）とレビジョン番号を取り出す。
-    一致しない場合は None を返す（この機能の対象外として扱う）。
+    リビジョン省略形 dxf_diff_results_Type{A/B/C}_{指番}_{モジュール}_{サイド}
+    〈2026-08以降〉、または旧手動命名の dxf_diff_results_Pair{A/B/C}_...) に従う
+    フォルダ名から、グループキー（指番_モジュール_サイド）とレビジョン番号
+    （省略時は None）を取り出す。一致しない場合は None を返す
+    （この機能の対象外として扱う）。
+
+    指番/モジュール/サイドの妥当な書式（SASHIBAN_MODULE_SIDE_PATTERN）を優先して
+    判定し、それに一致しない場合のみ GROUP_REVISION_PATTERN（groupを緩く取り出す。
+    リビジョン必須）にフォールバックする。これにより、指番書式に一致しない過去の
+    手動命名フォルダ（例: "..._OK_01"）の解釈は変えずに、新しいリビジョン省略形
+    にも対応する。
     """
+    strict_match = SASHIBAN_MODULE_SIDE_PATTERN.match(package_name)
+    if strict_match:
+        group = f"{strict_match['shiban']}_{strict_match['module']}_{strict_match['side']}"
+        return group, strict_match['revision']
+
     match = GROUP_REVISION_PATTERN.match(package_name)
     if not match:
         return None
@@ -114,7 +130,8 @@ def group_entries(entries):
     同じフォルダに混在していた）。
 
     Returns:
-        dict[group_key, list[(revision, LedgerEntry)]]（レビジョン文字列の昇順）
+        dict[group_key, list[(revision, LedgerEntry)]]（レビジョン文字列の昇順。
+        リビジョン省略形〈revision が None〉のエントリは末尾に並べる）
     """
     by_folder = defaultdict(list)
     for entry in entries:
@@ -130,7 +147,7 @@ def group_entries(entries):
         groups[group_key].append((revision, latest_entry))
 
     for group_key in groups:
-        groups[group_key].sort(key=lambda item: item[0])
+        groups[group_key].sort(key=lambda item: (item[0] is None, item[0] or ""))
 
     return dict(groups)
 
@@ -218,24 +235,35 @@ def build_group_workbook(group_key, revision_entries):
     summary_ws = wb.active
     summary_ws.title = "Summary"
 
+    # リビジョン省略形（revision が全件 None）のグループは、レビジョン列を出さず
+    # TOTAL列のみとする。一部だけ省略形が混在する場合（通常は発生しないが、命名
+    # 規則の移行期に起こりうる）は、見出しを "-" として列自体は残す。
     revisions = [revision for revision, _entry in revision_entries]
-    summary_ws.append([None, None, "TOTAL"] + [f'"{r}"' for r in revisions])
+    show_revision_columns = any(r is not None for r in revisions)
+    revision_col_count = len(revisions) if show_revision_columns else 0
+
+    header_row = [None, None, "TOTAL"]
+    if show_revision_columns:
+        header_row += [f'"{r if r is not None else "-"}"' for r in revisions]
+    summary_ws.append(header_row)
     for cell in summary_ws[1]:
         cell.font = Font(bold=True)
 
     for section, label in SUMMARY_ROWS:
         total = _total_value(revision_entries, label)
-        row = [section, label, total] + [_revision_value(entry, label) for _revision, entry in revision_entries]
+        row = [section, label, total]
+        if show_revision_columns:
+            row += [_revision_value(entry, label) for _revision, entry in revision_entries]
         summary_ws.append(row)
 
         row_idx = summary_ws.max_row
         number_format = "0.00%" if label in _PERCENT_LABELS else "#,##0"
-        for col_idx in range(3, 3 + 1 + len(revisions)):
+        for col_idx in range(3, 3 + 1 + revision_col_count):
             summary_ws.cell(row=row_idx, column=col_idx).number_format = number_format
 
     summary_ws.column_dimensions["A"].width = 18
     summary_ws.column_dimensions["B"].width = 24
-    for col_idx in range(3, 3 + 1 + len(revisions)):
+    for col_idx in range(3, 3 + 1 + revision_col_count):
         summary_ws.column_dimensions[summary_ws.cell(row=1, column=col_idx).column_letter].width = 12
 
     # --- Diff List シート（"Diff Package"・Summary9項目列は含めない。Childごとに集計済み） ---
