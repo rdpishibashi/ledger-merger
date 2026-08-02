@@ -248,7 +248,10 @@ def test_read_work_master_rows_returns_none_for_invalid_file():
 
 def test_compute_summary_rows_values():
     """削除/追加/変更/図形総数・変更率・差分ペア総数・流用率が定義通り算出される。
-    指番図面総数は指番_モジュール_サイド別集計と同じ「アップロード図面総数」TOTAL値。"""
+    本テストのデータは全行 Relation='RevUp' のため完全新規図面は0件（完全新規図面の
+    除外・カウントの検証は test_compute_summary_rows_excludes_brand_new_from_pair_count
+    参照）。指番図面総数は指番_モジュール_サイド別集計と同じ「アップロード図面総数」
+    TOTAL値。"""
     entry = LedgerEntry(
         package_name=_MATCHING_PACKAGE_NAME, source_path="a.xlsx",
         diff_list_rows=[
@@ -261,15 +264,49 @@ def test_compute_summary_rows_values():
     rows = compute_summary_rows([entry], run_timestamp=datetime(2026, 7, 31, 12, 0, 0))
 
     assert len(rows) == 1
-    sashiban, deleted, added, changed, entity_total, change_rate, pair_count, input_total, reuse_rate, ts = rows[0]
+    (sashiban, deleted, added, changed, entity_total, change_rate, pair_count,
+     brand_new_count, input_total, reuse_rate, brand_new_rate, ts) = rows[0]
     assert sashiban == "ME24-1001-0"
     assert (deleted, added, changed) == (15, 25, 40)  # 10+5, 20+5, 40=15+25
     assert entity_total == 150  # 100+50
     assert change_rate == 40 / 150
     assert pair_count == 2
+    assert brand_new_count == 0
     assert input_total == 8  # LedgerEntry.summary_values["入力図面総数"]から
     assert reuse_rate == 2 / 8
+    assert brand_new_rate == 0.0
     assert ts == datetime(2026, 7, 31, 12, 0, 0)
+
+
+def test_compute_summary_rows_excludes_brand_new_from_pair_count():
+    """Relation='完全新規図面' の行は「差分ペア総数」から除外され、代わりに
+    「完全新規図面数」（Childユニーク数）としてカウントされる（2026-08、
+    DXF-diff-manager自身の「差分抽出ペア数」の定義〈完全新規図面を含まない〉に
+    揃えるための変更）。エンティティ統計（削除/追加/変更/図形総数）は完全新規図面の
+    行も含めたまま合計する。"""
+    entry = LedgerEntry(
+        package_name=_MATCHING_PACKAGE_NAME, source_path="a.xlsx",
+        diff_list_rows=[
+            _row("C1", "P1", datetime(2026, 7, 1), deleted=10, added=20, diff=30, unchanged=40, total=100),
+            (
+                "C2", "none", "完全新規図面", "T", "S", datetime(2026, 7, 1), None,
+                "n/a", 30, "n/a", "n/a", 30,
+            ),
+        ],
+        summary_values={"入力図面総数": 4, "差分抽出ペア数": 1},
+    )
+
+    rows = compute_summary_rows([entry], run_timestamp=datetime.now())
+
+    assert len(rows) == 1
+    (_sashiban, deleted, added, changed, entity_total, _change_rate, pair_count,
+     brand_new_count, input_total, reuse_rate, brand_new_rate, _ts) = rows[0]
+    assert pair_count == 1  # 完全新規図面（C2）を除外し、通常ペア（C1）のみ
+    assert brand_new_count == 1
+    assert (deleted, added, changed, entity_total) == (10, 50, 60, 130)  # 完全新規図面の行も合算対象
+    assert input_total == 4
+    assert reuse_rate == 1 / 4
+    assert brand_new_rate == 1 / 4
 
 
 def test_compute_summary_rows_excludes_unresolvable_sashiban():
@@ -351,5 +388,7 @@ def test_summary_percent_columns_are_formatted_as_percent():
 
     change_rate_col = SUMMARY_HEADERS.index("図形変更率 [%]") + 1
     reuse_rate_col = SUMMARY_HEADERS.index("流用率 [%]") + 1
+    brand_new_rate_col = SUMMARY_HEADERS.index("新規作成率 [%]") + 1
     assert summary_ws.cell(row=2, column=change_rate_col).number_format == "0.00%"
     assert summary_ws.cell(row=2, column=reuse_rate_col).number_format == "0.00%"
+    assert summary_ws.cell(row=2, column=brand_new_rate_col).number_format == "0.00%"

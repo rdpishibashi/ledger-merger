@@ -235,9 +235,18 @@ def test_merged_workbook_structure():
 
     header = tuple(c.value for c in ws[1])
     assert header == OUTPUT_HEADERS
-    assert len(header) == 25
+    assert len(header) == 21
     assert header[:3] == ("Sashiban", "Module", "Side")
     assert header[-1] == "Diff Package"
+    # 図面統計系（入力図面総数・差分抽出ペア数・流用率 [%]・変更なし図形数 合計）は
+    # 含まれない。表示名も変更されている（差分図形数 合計→変更図形数 合計、
+    # 総図形数 合計→図形総数 合計）。
+    assert "変更なし図形数 合計" not in header
+    assert "入力図面総数" not in header
+    assert "差分抽出ペア数" not in header
+    assert "流用率 [%]" not in header
+    assert "変更図形数 合計" in header
+    assert "図形総数 合計" in header
 
     row_idx = 2
     for entry in entries:
@@ -262,11 +271,10 @@ def test_merged_workbook_structure():
 
 
 def test_entity_and_summary_columns_are_formatted_and_centered():
-    """"* Entities" 列・Summary9項目（"* 合計" 等）列はカンマ区切り（％項目は0.00%）＋
-    中央揃いで表示する。'n/a' と数値の位置がずれないようにするため。ヘッダー行も
-    中央揃いにする。"""
-    from utils.ledger_finder import SUMMARY_LABELS
-    from utils.ledger_merger import ENTITY_COLS, OUTPUT_HEADERS, PERCENT_LABELS
+    """"* Entities" 列・Summary由来5項目（"* 合計" 等）列はカンマ区切り（％項目は
+    0.00%）＋中央揃いで表示する。'n/a' と数値の位置がずれないようにするため。
+    ヘッダー行も中央揃いにする。"""
+    from utils.ledger_merger import ENTITY_COLS, OUTPUT_HEADERS, PERCENT_LABELS, _MERGED_SUMMARY_DISPLAY_LABELS
 
     entries, _missing_folders = find_ledger_files(REAL_DATA_ROOT)
     merged_bytes = build_merged_workbook(entries)
@@ -277,7 +285,7 @@ def test_entity_and_summary_columns_are_formatted_and_centered():
     for cell in ws[1]:
         assert cell.alignment.horizontal == "center"
 
-    summary_start_col = OUTPUT_HEADERS.index(SUMMARY_LABELS[0]) + 1  # SUMMARY_LABELS の先頭列
+    summary_start_col = OUTPUT_HEADERS.index(_MERGED_SUMMARY_DISPLAY_LABELS[0]) + 1
     row_idx = 2
     for entry in entries:
         for row_in_block in range(len(entry.diff_list_rows)):
@@ -287,7 +295,7 @@ def test_entity_and_summary_columns_are_formatted_and_centered():
                 assert cell.alignment.horizontal == "center"
 
             if row_in_block == 0:
-                for offset, label in enumerate(SUMMARY_LABELS):
+                for offset, label in enumerate(_MERGED_SUMMARY_DISPLAY_LABELS):
                     cell = ws.cell(row=row_idx, column=summary_start_col + offset)
                     expected_format = "0.00%" if label in PERCENT_LABELS else "#,##0"
                     assert cell.number_format == expected_format
