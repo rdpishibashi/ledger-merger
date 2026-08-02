@@ -17,6 +17,8 @@
 | 「統合台帳をダウンロード」実行後に「新規統合の実行」を表示し、直前作成の統合図面管理台帳.xlsxを自動使用する | `spec/test_new_merge_flow.py` | ダウンロード前は「新規統合の実行」ボタンが非表示、ダウンロード後（`downloaded_once`）に表示されることを検証。`use_last_master` モード時は手動アップロード用キャプションが消え、自動使用の案内メッセージと「別のファイルをアップロードし直す」エスケープハッチボタンが表示されることを検証 |
 | 図形変更量詳細.xlsxにSashiban/Module/Side列を追加、Diff Packageを最終列へ移動 | `tests/unit/test_ledger_merger.py::test_merged_workbook_structure` | 25列構成（先頭3列がSashiban/Module/Side、最終列がDiff Package）と、各列の値が`parse_sashiban_module_side()`の逆算結果と一致することを検証 |
 | 統合図面管理台帳.xlsxにWork Master（指番ごとのChild-Parentユニーク化）・Summary（指番ごとの実行時点スナップショット追記ログ）シートを追加 | `spec/test_unified_zip_bundle.py`、`tests/unit/test_master_ledger_builder.py` | Work Masterが`(指番,Child,Parent)`で重複なく指番→Child昇順であること、Summaryがキー単位でマージされず前回分の末尾に単純追記されること（同じ指番の行が実行回数分増える）、Summaryの各列の算出式（削除/追加/変更図形総数・図形総数・図形変更率[%]・差分ペア総数・指番図面総数・流用率[%]）を検証。2026-07-31、当初「指番ごとの小計行をWork Masterに追加」する設計だったが、使い勝手の観点からユーザー判断により撤回し、代わりにSummaryシートとして独立させた経緯あり |
+| DXF-diff-manager が2026-08にZIPダウンロードファイル名末尾のリビジョン番号を省略するようになった仕様変更への追随 | `spec/test_2026_08_dxf_diff_manager_spec_update.py` | リビジョン省略形（`..._ZC00_405`、末尾に`_数字`が無い）でも指番/モジュール/サイドを逆算でき、グループ集計Summaryはレビジョン別列を出さずTOTAL列のみになることを検証。あわせて、Master・Work Masterの蓄積マージ（前回台帳との統合／今回アップロード内での重複解決）が「今回データによる無条件上書き」ではなく「Recorded Dateが新しい方を採用」に変わったことを、前回の方が新しいケース・今回の方が新しいケースの両方向で検証 |
+| DXF-diff-manager Summaryシートに追加された「完全新規図面数」「新規作成率 [%]」を統合図面管理台帳・指番_モジュール_サイド別集計に反映、差分ペア総数から完全新規図面を除外 | `tests/unit/test_master_ledger_builder.py::test_compute_summary_rows_excludes_brand_new_from_pair_count`、`spec/test_group_summary_export.py` | 統合図面管理台帳Summary（`SUMMARY_HEADERS`10列→12列）はRelation='完全新規図面'の行をChildユニーク数で「完全新規図面数」として集計し「差分ペア総数」から除外すること、エンティティ統計（削除/追加/変更/図形総数）は完全新規図面の行も含めて合計することを検証。指番_モジュール_サイド別集計Summary（`SUMMARY_ROWS`9行→11行）は、この2指標を持たない旧形式台帳では0として扱われること（例外にならないこと）を、実データフィクスチャの期待値に0を追加する形で検証 |
 
 ## App.py（View層）の状態遷移テストについて
 
@@ -34,4 +36,4 @@
 `tests/fixtures/dxf_diff_manager_output/` — 2026-07-28 の不具合調査時に取得した実データの一部（DXF-diff-manager の現行出力形式をそのまま反映）。構成は `tests/unit/test_ledger_merger.py` のモジュールdocstring参照。
 
 ---
-最終更新: 2026-07-31
+最終更新: 2026-08-02
