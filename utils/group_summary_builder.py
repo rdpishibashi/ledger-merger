@@ -44,6 +44,8 @@ _ENTITY_COLS = ("Deleted Entities", "Added Entities", "Diff Entities", "Unchange
 # Summaryシートの行構成（セクション見出し, 項目ラベル）。項目ラベルは DXF-diff-manager
 # 自身のSummaryシートの表記（Type A: all_in_one）をそのまま使う。Type B/C
 # （流用先図面総数/流用先図面 図形総数）の文言には対応しない（既知の制約）。
+# 「完全新規図面数」「新規作成率 [%]」は2026-08追加（DXF-diff-manager Summaryシートの
+# 対応する2指標と同じ相対位置：差分抽出ペア数の直下・流用率[%]の直下）。
 SUMMARY_ROWS = (
     ("エンティティ統計", "削除図形 総数"),
     (None, "追加図形 総数"),
@@ -53,11 +55,13 @@ SUMMARY_ROWS = (
     (None, "図形変更率 [%]"),
     ("図面統計", "アップロード図面総数"),
     (None, "差分抽出ペア数"),
+    (None, "完全新規図面数"),
     (None, "流用率 [%]"),
+    (None, "新規作成率 [%]"),
 )
 
 # Summaryシートの項目ラベル → LedgerEntry.summary_values のキー（utils.ledger_finder の
-# SUMMARY_LABELS、Ledger-merger自身の統合Excel列名）への対応。
+# SUMMARY_LABELS/OPTIONAL_SUMMARY_LABELS、Ledger-merger自身の統合Excel列名）への対応。
 _CANONICAL_BY_DISPLAY_LABEL = {
     "削除図形 総数": "削除図形数 合計",
     "追加図形 総数": "追加図形数 合計",
@@ -67,14 +71,16 @@ _CANONICAL_BY_DISPLAY_LABEL = {
     "図形変更率 [%]": "図形変更率 [%]",
     "アップロード図面総数": "入力図面総数",
     "差分抽出ペア数": "差分抽出ペア数",
+    "完全新規図面数": "完全新規図面数",
     "流用率 [%]": "流用率 [%]",
+    "新規作成率 [%]": "新規作成率 [%]",
 }
 
 _COUNT_LABELS = (
     "削除図形 総数", "追加図形 総数", "変更（追加+削除）図形 総数", "変更なし図形 総数",
-    "アップロード図面 図形総数", "アップロード図面総数", "差分抽出ペア数",
+    "アップロード図面 図形総数", "アップロード図面総数", "差分抽出ペア数", "完全新規図面数",
 )
-_PERCENT_LABELS = {"図形変更率 [%]", "流用率 [%]"}
+_PERCENT_LABELS = {"図形変更率 [%]", "流用率 [%]", "新規作成率 [%]"}
 
 
 def parse_group_and_revision(package_name):
@@ -185,7 +191,12 @@ def aggregate_diff_list_by_child(revision_entries):
 
 
 def _revision_value(entry, display_label):
-    return entry.summary_values.get(_CANONICAL_BY_DISPLAY_LABEL[display_label])
+    """entry.summary_values から表示ラベルに対応する値を取得する。「完全新規図面数」
+    「新規作成率 [%]」は任意ラベル（utils.ledger_finder.OPTIONAL_SUMMARY_LABELS）の
+    ため、これらを持たない旧バージョンの台帳では値が存在しない。その場合は0として
+    扱う（Summaryシートの合計・レビジョン列は常に数値で表示するため）。
+    """
+    return entry.summary_values.get(_CANONICAL_BY_DISPLAY_LABEL[display_label], 0)
 
 
 def _total_value(revision_entries, display_label):
@@ -197,6 +208,10 @@ def _total_value(revision_entries, display_label):
         total_pairs = _total_value(revision_entries, "差分抽出ペア数")
         total_drawings = _total_value(revision_entries, "アップロード図面総数")
         return (total_pairs / total_drawings) if total_drawings else 0.0
+    if display_label == "新規作成率 [%]":
+        total_brand_new = _total_value(revision_entries, "完全新規図面数")
+        total_drawings = _total_value(revision_entries, "アップロード図面総数")
+        return (total_brand_new / total_drawings) if total_drawings else 0.0
     return sum(_revision_value(entry, display_label) for _revision, entry in revision_entries)
 
 
