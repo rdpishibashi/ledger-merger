@@ -17,12 +17,20 @@ SUMMARY_LABELS = (
     "総図形数 合計", "図形変更率 [%]", "入力図面総数", "差分抽出ペア数", "流用率 [%]",
 )
 
+# DXF-diff-manager が2026-08にSummaryシートへ追加した指標。SUMMARY_LABELS（台帳判定の
+# 必須条件）には含めない——必須にすると、この2指標を持たない旧バージョンの台帳が
+# すべて無効判定されてしまうため。存在すれば summary_values に取り込むだけの任意項目
+# とし、欠損時は呼び出し側で0として扱う。
+OPTIONAL_SUMMARY_LABELS = ("完全新規図面数", "新規作成率 [%]")
+
 # SUMMARY_LABELS（Ledger-merger 自身の統合Excel出力列名。README.md 記載の契約）に対する、
 # DXF-diff-manager の Summary シート側の実際のラベル文言。DXF-diff-manager 側でラベル
 # 文言が変更されても統合Excelの列名は変えたくないため、ここでエイリアスとして吸収する。
 # 「総図形数 合計」「入力図面総数」はペアリング方式（Type A/B/C）によって文言が変わる
 # （DXF-diff-manager `model/master_ledger.py` の `save_master_to_bytes()` 参照）ため、
-# 複数エイリアスを許容する。
+# 複数エイリアスを許容する。OPTIONAL_SUMMARY_LABELS の2項目もここに含め、
+# _read_summary_values() で他の項目と同様に解決する（存在する場合のみ summary_values
+# に入る。SUMMARY_LABELS の必須チェックには含めない）。
 _SOURCE_LABEL_ALIASES = {
     "削除図形数 合計": ("削除図形 総数",),
     "追加図形数 合計": ("追加図形 総数",),
@@ -33,6 +41,8 @@ _SOURCE_LABEL_ALIASES = {
     "入力図面総数": ("アップロード図面総数", "流用先図面総数"),
     "差分抽出ペア数": ("差分抽出ペア数",),
     "流用率 [%]": ("流用率 [%]",),
+    "完全新規図面数": ("完全新規図面数",),
+    "新規作成率 [%]": ("新規作成率 [%]",),
 }
 
 # DXF-diff-manager が出力する台帳以外の固定ファイル名。台帳の候補から除外する。
