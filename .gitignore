@@ -204,3 +204,4 @@ log*.txt
 /TECHNICAL.md
 /CLAUDE.md
 /docs/
+/tests/regression/README.md
