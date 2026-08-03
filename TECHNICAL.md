@@ -164,8 +164,9 @@ build_merged_workbook  build_group_workbooks   build_master_workbook(entries,
     タプル）として `ledger_merger.py` 側に定義し、`ledger_finder.SUMMARY_LABELS`
     〈台帳判定用の必須9項目〉とは分離した）。
   - `Sashiban`/`Module`/`Side` は `utils/group_summary_builder.parse_sashiban_module_side()`
-    で `entry.package_name`（Diff Package名）から逆算する。命名規則に一致しない
-    場合は3列とも空欄（`None`）。
+    で、台帳ファイル名（`entry.source_path`）を主・Diff Package名（`entry.package_name`）を
+    従として逆算する。どちらの命名規則にも一致しない場合は3列とも空欄（`None`）
+    （`find_entries_with_unresolved_sashiban()` で検出でき、`app.py` に警告表示される）。
   - 各 `LedgerEntry` ブロック内:
     - `Diff Package`列（最終列、`DIFF_PACKAGE_COL`）: ブロック最初の行のみ黒字（`FF000000`）、以降は薄いグレー（`FFA6A6A6`）。
     - `Sashiban`/`Module`/`Side`〜`Total Entities`列: 元の `Diff List` 行をそのまま転記。`Recorded Date` 列のみ `number_format = "YYYY-MM-DD HH:MM:SS"`。
@@ -177,28 +178,36 @@ build_merged_workbook  build_group_workbooks   build_master_workbook(entries,
 
 ### `utils/group_summary_builder.py`
 
-DXF-diff-manager のZIPダウンロードファイル名の命名規則
-（`dxf_diff_results_Type{A/B/C}_{指番}_{モジュール}_{サイド}_{リビジョン}`。2026-07-28以前の
-手動命名 `dxf_diff_results_Pair{A/B/C}_...` にも対応。2026-08以降、末尾の `_{リビジョン}`
-は省略される場合がある）に依存する。
+指番・モジュール・サイドは**台帳ファイル名**（`{指番}_{モジュール}_{サイド}[_-suffix].xlsx`。
+DXF-diff-manager `model/master_ledger.py` の `MASTER_FILENAME_PATTERN` と同一規則）を
+**主**として決定する。Diff Package名（出力フォルダ名。ZIPダウンロード時にユーザーが
+自由編集できるテキスト欄に由来し、モジュール/サイドが欠落しうる）は**従**とし、
+**リビジョン番号のみ**フォルダ名から取得する（台帳ファイル名の末尾サフィックスは
+リビジョン以外の自由文字列でありうるため）。フォルダ名の命名規則は
+`dxf_diff_results_Type{A/B/C}_{指番}_{モジュール}_{サイド}_{リビジョン}`
+（2026-07-28以前の手動命名 `dxf_diff_results_Pair{A/B/C}_...` にも対応。2026-08以降、
+末尾の `_{リビジョン}` は省略される場合がある）。
 
-- `parse_group_and_revision(package_name) -> (group_key, revision) | None`
-  - フォルダ名から正規表現でグループキー（`指番_モジュール_サイド`）とレビジョン
-    （省略時は `None`）を取り出す。一致しないフォルダ（この命名規則に従っていない
-    過去データ等）は対象外（`None`）。
-  - `SASHIBAN_MODULE_SIDE_PATTERN`（指番書式を検証、リビジョンは任意）を優先して
-    判定し、一致しない場合のみ `GROUP_REVISION_PATTERN`（groupを1文字列として緩く
-    取り出す。リビジョン必須）にフォールバックする2段構え（2026-08）。これにより、
-    指番書式に一致しない過去の手動命名フォルダ（例: `..._OK_01`）の解釈を変えずに
-    リビジョン省略形にも対応している。
-- `parse_sashiban_module_side(package_name) -> (sashiban, module, side) | (None, None, None)`
-  - `SASHIBAN_MODULE_SIDE_PATTERN`（DXF-diff-manager `app.py` の `MASTER_FILENAME_PATTERN`
-    と同一の正規表現: 指番=`[A-Z]{2}\d{2}-\d{4}-\d`、モジュール/サイド=`[A-Z0-9]{4|3}`
-    または `"na"`。末尾の `_{リビジョン}` は任意）で、指番・モジュール・サイドを個別に
-    取り出す。`parse_group_and_revision` の `group` は3者を結合した1文字列として緩く
-    取り出すのに対し、こちらはそれぞれの妥当な書式を検証したうえで個別に返す
-    （`utils/ledger_merger.py`・`utils/master_ledger_builder.py` の
+- `parse_sashiban_module_side(package_name, filename=None) -> (sashiban, module, side) | (None, None, None)`
+  - `filename`（`entry.source_path`）が `LEDGER_FILENAME_PATTERN` に一致すればそこから
+    決定する（主）。一致しない、または `filename` 省略時は `package_name` を
+    `SASHIBAN_MODULE_SIDE_PATTERN`（指番=`[A-Z]{2}\d{2}-\d{4}-\d`、モジュール/サイド=
+    `[A-Z0-9]{4|3}` または `"na"`）で判定する（従）。どちらにも一致しない場合は
+    `(None, None, None)`（`utils/ledger_merger.py`・`utils/master_ledger_builder.py` の
     `Sashiban`/`Module`/`Side`・`Work Master`・`Summary` 生成で使用）。
+- `parse_group_and_revision(package_name, filename=None) -> (group_key, revision) | None`
+  - `parse_sashiban_module_side()` と同じ優先順位で指番/モジュール/サイドを決定し
+    `group_key`（`指番_モジュール_サイド`）を組み立てる。**レビジョンは常に
+    `package_name` からのみ取得**（`SASHIBAN_MODULE_SIDE_PATTERN` の任意リビジョン群、
+    無ければ `GROUP_REVISION_PATTERN` の緩いフォールバック、それも無ければ `None`）。
+  - 指番/モジュール/サイドがどちらの規則にも一致しない場合のみ、`package_name` を
+    `GROUP_REVISION_PATTERN`（groupを1文字列として緩く取り出す。リビジョン必須）で
+    判定する最終フォールバックがある。これにより、指番書式に一致しない過去の
+    手動命名フォルダ（例: `..._OK_01`）の解釈は変えない。
+- `find_entries_with_unresolved_sashiban(entries) -> list[LedgerEntry]`
+  - `parse_sashiban_module_side(entry.package_name, entry.source_path)` が失敗する
+    エントリ（台帳ファイル名のミスタイプ等）を返す。`app.py` の警告表示に使う
+    （2026-08-03、指番が黙って除外される不具合の再発防止として追加）。
 - `aggregate_input_drawing_totals_by_sashiban(entries) -> dict[sashiban, int|float]`
   - `entries` を `group_entries()` でグルーピングし、各グループの「アップロード図面総数」
     TOTAL値（`{group_key}_all.xlsx` の Summaryシートと同じ計算）を指番ごとに合算する。
@@ -207,13 +216,17 @@ DXF-diff-manager のZIPダウンロードファイル名の命名規則
     テスト用の簡易フィクスチャ〈`summary_values={}`〉でも安全に動作させるため）。
     `utils/master_ledger_builder.compute_summary_rows()` の「指番図面総数」列に使用。
 - `group_entries(entries) -> dict[group_key, list[(revision, LedgerEntry)]]`
-  - `package_name` でグルーピングし、レビジョン昇順にソートする（リビジョン省略形
-    〈`revision` が `None`〉のエントリは末尾に並べる。2026-08）。
-  - **同一フォルダ（同一 `package_name`）に複数の有効な台帳がある場合、`Diff List` 内の
-    最大 `Recorded Date` が最も新しいものだけを採用する**（差分抽出のやり直しで古い
-    実行結果がフォルダに残っていた場合の取り違え防止。2026-07-28に実データで確認した
-    ケース: 図番抽出に失敗した古い実行結果〈`na_na` ファイル名〉と、後で成功した新しい
-    実行結果が同じフォルダに混在していた）。
+  - **まず `package_name`（同一フォルダ）でグルーピングし、`Diff List` 内の最大
+    `Recorded Date` が最も新しい候補を1つに絞ってから**、その勝者の指番/モジュール/
+    サイド・レビジョンを決定する（差分抽出のやり直しで古い実行結果がフォルダに
+    残っていた場合の取り違え防止。2026-07-28に実データで確認したケース: 図番抽出に
+    失敗した古い実行結果〈`na_na` ファイル名〉と、後で成功した新しい実行結果が同じ
+    フォルダに混在していた）。**この「フォルダ内で1つに絞ってから指番を決める」順序は
+    重要**——指番決定を先にすると、同一フォルダ内の候補がファイル名の違いで別グループに
+    分裂し、取り違え防止が機能しなくなる（2026-08-03、ファイル名優先化の際に一度
+    この回帰を作り、`tests/regression/bugfix/test_sashiban_filename_fallback.py` で
+    再発防止）。レビジョン昇順にソートする（リビジョン省略形〈`revision` が `None`〉の
+    エントリは末尾に並べる。2026-08）。
 - `aggregate_diff_list_by_child(revision_entries) -> list[tuple]`
   - グループ内の全レビジョンの `diff_list_rows` を `Child` ごとに集計する。
     `Deleted/Added/Diff/Unchanged/Total Entities` の5列は**全レビジョンにわたって単純合計**
@@ -267,8 +280,10 @@ DXF-diff-manager のZIPダウンロードファイル名の命名規則
   = `Sashiban, Child, Parent, Title, Subtitle, Recorded Date, Note, Deleted/Added/Diff/
   Unchanged/Total Entities`（12列）。
 - `_extract_unique_work_master_entries(entries) -> dict[(sashiban, child, parent), (sashiban, diff_list_row)]`
-  - `entry.package_name` を `parse_sashiban_module_side()` で解決できたエントリのみ対象
-    （指番を逆算できないエントリは除外）。`(sashiban, Child, Parent)` でユニーク化し、
+  - `parse_sashiban_module_side(entry.package_name, entry.source_path)` で解決できた
+    エントリのみ対象（台帳ファイル名・出力フォルダ名のどちらからも指番を逆算できない
+    エントリは除外。`find_entries_with_unresolved_sashiban()` で検出可能）。
+    `(sashiban, Child, Parent)` でユニーク化し、
     `extract_unique_child_parent_rows` と同じ規則で `Recorded Date` が最も新しい行を
     採用する。`diff_list_row` は `DIFF_LIST_HEADERS` 12列（`Relation` を含む）のまま
     保持する内部専用の中間表現——`extract_unique_work_master_rows()`（Work Master出力用に
@@ -422,7 +437,7 @@ Master/Work Masterとは異なり、**キー単位のマージ・上書きを行
   が `True` の間、「新規統合の実行」ボタン（`type="primary"`）を表示する。押すと
   `use_last_master=True`・`zip_uploader_version` を +1 にした上で、結果表示系の
   キー（`final_zip_bytes`/`merged_count`/`merged_missing_folders`/
-  `group_summary_count`/`downloaded_once`）のみを pop し、`master_bytes` は
+  `merged_unresolved_sashiban`/`group_summary_count`/`downloaded_once`）のみを pop し、`master_bytes` は
   保持したまま `st.rerun()` する（自動使用の入力元として次回に持ち越すため）。
 - `use_last_master` モード中に「別のファイルをアップロードし直す」ボタンを押すと
   `use_last_master=False` にして `st.rerun()` し、通常の手動アップロードUIに戻る
@@ -441,6 +456,7 @@ Master/Work Masterとは異なり、**キー単位のマージ・上書きを行
 | `master_bytes` | 直近の統合成功時に生成した `統合図面管理台帳.xlsx` のバイト列。「新規統合の実行」時の自動使用元を兼ねる（2026-07-29） |
 | `merged_count` | 統合した Diff Package 数 |
 | `merged_missing_folders` | 台帳ファイルが見つからなかったフォルダ名（ベース名のみ）の一覧 |
+| `merged_unresolved_sashiban` | 台帳は見つかったが指番を特定できなかったエントリの一覧（`"{package_name} / {ファイル名}"` 形式。2026-08-03） |
 | `group_summary_count` | `指番_モジュール_サイド別集計` に生成されたファイル数 |
 | `downloaded_once` | ダウンロードボタンが押されたかどうか。`True` の間だけ「新規統合の実行」ボタンを表示（2026-07-29） |
 | `use_last_master` | `True` の間、統合図面管理台帳.xlsxのアップロード欄を隠し `master_bytes` を自動使用（2026-07-29） |
@@ -581,4 +597,4 @@ DXF-diff-manager の実装から推測される強い相関であり、`差分�
 [README.md](README.md) の「よくある問題」を参照。
 
 ---
-最終更新: 2026-08-02
+最終更新: 2026-08-03

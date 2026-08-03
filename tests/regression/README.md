@@ -7,6 +7,7 @@
 | 2026-07-28 「有効な台帳ファイルが見つかりませんでした」 | `bugfix/test_output_folder_detection.py` | (1) `find_ledger_files()` の出力フォルダ判定を「サブフォルダの有無」から「自分より深い階層にxlsxを含むフォルダが無い、xlsxを直下に持つフォルダ」に一般化し、DXF-diff-manager出力に追加された `dxf図面` サブフォルダに対応。(2) DXF-diff-manager の Summary シートラベル文言の変更に追随するエイリアス変換（`_SOURCE_LABEL_ALIASES`）を追加。詳細は各テストのdocstring参照。 |
 | 2026-07-29 「統合実行」ボタンの色が成功後もprimaryのまま | `bugfix/test_run_button_color_after_merge.py` | `app.py` の「統合実行」ボタンが常に固定で `type="primary"` だったため、統合成功でダウンロードボタンが有効になっても白背景（secondary）にならなかった。`merge_done = "final_zip_bytes" in st.session_state` に基づく動的 `type` 計算＋成功時 `st.rerun()` で修正。 |
 | 2026-07-29 「統合台帳をダウンロード」ボタンの色がダウンロード後もprimaryのまま | `bugfix/test_download_button_color_after_download.py` | 上記と同じ色分けパターンをダウンロードボタン自体には適用し忘れていた。`type = "secondary" if st.session_state.get("downloaded_once") else "primary"` の動的計算＋ダウンロード検知時の `st.rerun()` で修正。 |
+| 2026-08-03 4指番を含むZIPを統合したのに、統合図面管理台帳.xlsxのWork Master/Summaryに1指番しか反映されない | `bugfix/test_sashiban_filename_fallback.py` | `parse_sashiban_module_side()`/`parse_group_and_revision()` が Diff Package フォルダ名（ZIPダウンロード時にユーザーが自由編集できるテキスト欄に由来し、モジュール/サイドが欠落しうる）だけを見て指番を逆算しており、欠落時は警告なしに黙って除外していた。台帳ファイル名（常に「{指番}_{モジュール}_{サイド}[_-suffix].xlsx」形式）を一次情報源に変更し、フォルダ名は従情報源＋リビジョン抽出専用にした。同一フォルダ内の複数候補（差分抽出やり直しの残骸）から最新Recorded Dateを選ぶ処理は、指番解決より先に行うよう `group_entries()` を再構成（後で解決するとフォルダ内の取り違え防止が壊れるため）。ファイル名・フォルダ名どちらにも一致しない場合（ミスタイプ等）は `find_entries_with_unresolved_sashiban()` で検出し、app.py に警告表示を追加した。 |
 
 ## spec（仕様確認）
 

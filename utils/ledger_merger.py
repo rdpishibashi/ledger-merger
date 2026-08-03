@@ -34,8 +34,9 @@ _MERGED_SUMMARY_DISPLAY_LABELS = tuple(display for _canonical, display in _MERGE
 
 PERCENT_LABELS = {"図形変更率 [%]"}
 
-# "Sashiban"/"Module"/"Side" は Diff Package（DXF-diff-manager出力フォルダ名）から
-# parse_sashiban_module_side() で逆算した指番/モジュール/サイド。"Diff Package" 自体は
+# "Sashiban"/"Module"/"Side" は台帳ファイル名を主・Diff Package（DXF-diff-manager
+# 出力フォルダ名）を従として parse_sashiban_module_side() で逆算した指番/モジュール/
+# サイド。"Diff Package" 自体は
 # 参照情報として最終列に残す（2026-07-31、ユーザー要望によりChildの前に指番系3列を
 # 追加し、Diff Packageを先頭から最終列へ移動）。
 OUTPUT_HEADERS = ("Sashiban", "Module", "Side") + DIFF_LIST_HEADERS + _MERGED_SUMMARY_DISPLAY_LABELS + ("Diff Package",)
@@ -59,7 +60,7 @@ def build_merged_workbook(entries):
 
     row_idx = 2
     for entry in entries:
-        sashiban, module, side = parse_sashiban_module_side(entry.package_name)
+        sashiban, module, side = parse_sashiban_module_side(entry.package_name, entry.source_path)
         for row_in_block, diff_row in enumerate(entry.diff_list_rows):
             row = [sashiban, module, side, *diff_row]
             if row_in_block == 0:

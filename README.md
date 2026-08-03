@@ -77,7 +77,7 @@ streamlit run app.py
 
 | 列 | 内容 |
 |---|---|
-| A〜C | Sashiban（指番）・Module（モジュール）・Side（サイド）— Diff Package名から逆算 |
+| A〜C | Sashiban（指番）・Module（モジュール）・Side（サイド）— 台帳ファイル名（`{指番}_{モジュール}_{サイド}[_-suffix].xlsx`）を主、Diff Package名（出力フォルダ名）を従として逆算 |
 | D〜O | 元の Diff List シートの全列（Child 〜 Total Entities） |
 | P〜T | 削除図形数 合計・追加図形数 合計・変更図形数 合計・図形総数 合計・図形変更率 [%]（各ブロックの先頭行のみ） |
 | U | Diff Package（出力フォルダ名） |
@@ -88,10 +88,11 @@ streamlit run app.py
   昇順で並べたもの（`Child, Parent, Relation, Title, Subtitle, Recorded Date, Note,
   Deleted/Added/Diff/Unchanged/Total Entities`）。同じペアが複数エントリにまたがる
   場合は `Recorded Date` が最も新しい行を採用する。
-- **`Work Master`**（12列）: 指番（Diff Package名から逆算）ごとに `Child`-`Parent` ペアで
+- **`Work Master`**（12列）: 指番（台帳ファイル名（`{指番}_{モジュール}_{サイド}[_-suffix].xlsx`）を主、Diff Package名（出力フォルダ名）を従として逆算）ごとに `Child`-`Parent` ペアで
   ユニーク化し、指番→`Child` の昇順で並べたもの（`Sashiban, Child, Parent, Title,
   Subtitle, Recorded Date, Note, Deleted/Added/Diff/Unchanged/Total Entities`。
-  `Relation` は含まない）。指番を逆算できないエントリは対象外。同じキーの複数行がある
+  `Relation` は含まない）。台帳ファイル名・出力フォルダ名のどちらからも指番を
+  逆算できないエントリは対象外（画面に警告表示される）。同じキーの複数行がある
   場合は `Recorded Date` が最も新しい行を採用する。
 - **`Summary`**（12列）: `指番, 削除図形総数, 追加図形総数, 変更図形総数, 図形総数,
   図形変更率 [%], 差分ペア総数, 完全新規図面数, 指番図面総数, 流用率 [%],
@@ -106,9 +107,11 @@ streamlit run app.py
 
 `Summary` シート（`TOTAL` 列 + レビジョン列ごとの値。DXF-diff-manager 側のファイル名で
 リビジョンが省略されているグループは `TOTAL` 列のみ）と `Diff List` シート（`Child` ごとに
-集計、`Diff Package`・合計列は含まない12列）の2シート構成。DXF-diff-manager の
-ZIPダウンロードファイル名の命名規則（`dxf_diff_results_Type{A/B/C}_{指番}_{モジュール}_
-{サイド}_{リビジョン}`。リビジョンは省略可）に一致するフォルダのみが対象。
+集計、`Diff Package`・合計列は含まない12列）の2シート構成。指番・モジュール・サイドは
+台帳ファイル名を主として決定する（上記と同じ規則）。**リビジョン番号のみ**、DXF-diff-manager
+のZIPダウンロードファイル名の命名規則（`dxf_diff_results_Type{A/B/C}_{指番}_{モジュール}_
+{サイド}_{リビジョン}`。省略可）に従い、出力フォルダ名から取得する（台帳ファイル名の末尾に
+付く任意サフィックスはリビジョンとして扱わない）。
 
 ## 技術詳細
 
@@ -119,6 +122,12 @@ ZIPダウンロードファイル名の命名規則（`dxf_diff_results_Type{A/B
 - **「有効な台帳ファイルが見つかりませんでした」と表示される**
   → アップロードした ZIP の中に `Diff List` と `Summary` の両シートを持つ
     `.xlsx` が存在するか確認してください。ファイル名は問いません。
+- **「指番を特定できなかった台帳ファイル」と警告表示される**
+  → 台帳ファイル名が `{指番}_{モジュール}_{サイド}[_-suffix].xlsx`（例:
+    `ME24-1001-0_ZM00_405.xlsx`）の命名規則からずれています（ミスタイプ等）。
+    ファイル名を修正して再アップロードしてください。これらのファイルは
+    `図形変更量詳細.xlsx` には含まれますが、`統合図面管理台帳.xlsx` の
+    `Work Master`/`Summary`・`指番_モジュール_サイド別集計/` からは除外されます。
 - **「統合実行」ボタンが押せない**
   → ZIPファイルと「統合図面管理台帳.xlsx」の両方をアップロードしてください
     （どちらも必須です）。初めて使う場合も、`Master` シートだけの空のExcelファイル
@@ -136,4 +145,4 @@ ZIPダウンロードファイル名の命名規則（`dxf_diff_results_Type{A/B
 株式会社RDPi所有・改版禁止
 
 ---
-最終更新: 2026-08-02
+最終更新: 2026-08-03
