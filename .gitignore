@@ -200,3 +200,7 @@ log*.txt
 # 台帳検出の回帰テスト用フィクスチャ（実データから抽出した最小限のExcel）は
 # 上記の *.xlsx 除外の対象外とする
 !tests/fixtures/**/*.xlsx
+# Technical documentation (development-only info, not tracked in public repos)
+/TECHNICAL.md
+/CLAUDE.md
+/docs/
