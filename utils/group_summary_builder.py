@@ -10,6 +10,7 @@ DXF-diff-manager のZIPダウンロードファイル名の命名規則
 """
 
 import io
+import os
 import re
 from collections import defaultdict
 from datetime import datetime
@@ -35,6 +36,18 @@ SASHIBAN_MODULE_SIDE_PATTERN = re.compile(
     r'^dxf_diff_results_(?:Pair|Type)[A-Za-z]_'
     r'(?P<shiban>[A-Z]{2}\d{2}-\d{4}-\d)_(?P<module>[A-Z0-9]{4}|na)_(?P<side>[A-Z0-9]{3}|na)'
     r'(?:_(?P<revision>\d+))?$'
+)
+
+# 台帳 .xlsx のファイル名パターン。DXF-diff-manager 自身の台帳ファイル名規則
+# （model.master_ledger.MASTER_FILENAME_PATTERN）と同一の正規表現。指番/モジュール/
+# サイドの抽出は、この「ファイル名」を主として使う。フォルダ名（Diff Package名）は
+# ZIPダウンロード時にユーザーが自由に編集できるテキスト欄に由来し、モジュール/サイドが
+# 欠落しうる（2026-08、実データで確認: フォルダ名 "dxf_diff_results_TypeA_PE25-9601-0"
+# にはモジュール/サイドが無いが、ファイル名 "PE25-9601-0_ZM00_405.xlsx" は正しく
+# 持っていた）のに対し、台帳ファイル名は常にこの規則で作られるため信頼できる。
+LEDGER_FILENAME_PATTERN = re.compile(
+    r'^(?P<shiban>[A-Z]{2}\d{2}-\d{4}-\d)_(?P<module>[A-Z0-9]{4}|na)_(?P<side>[A-Z0-9]{3}|na)'
+    r'(?:[_-].*)?\.xlsx$'
 )
 
 _CHILD_COL = DIFF_LIST_HEADERS.index("Child")
@@ -83,25 +96,57 @@ _COUNT_LABELS = (
 _PERCENT_LABELS = {"図形変更率 [%]", "流用率 [%]", "新規作成率 [%]"}
 
 
-def parse_group_and_revision(package_name):
-    """DXF-diff-managerのZIPダウンロードファイル名の命名規則
-    (dxf_diff_results_Type{A/B/C}_{指番}_{モジュール}_{サイド}_{リビジョン}、
-    リビジョン省略形 dxf_diff_results_Type{A/B/C}_{指番}_{モジュール}_{サイド}
-    〈2026-08以降〉、または旧手動命名の dxf_diff_results_Pair{A/B/C}_...) に従う
-    フォルダ名から、グループキー（指番_モジュール_サイド）とレビジョン番号
-    （省略時は None）を取り出す。一致しない場合は None を返す
-    （この機能の対象外として扱う）。
+def parse_sashiban_module_side(package_name, filename=None):
+    """指番・モジュール・サイドを取り出す。DXF-diff-manager 側で未入力（"na"）だった
+    場合はそのまま文字列 "na" を返す。
 
-    指番/モジュール/サイドの妥当な書式（SASHIBAN_MODULE_SIDE_PATTERN）を優先して
-    判定し、それに一致しない場合のみ GROUP_REVISION_PATTERN（groupを緩く取り出す。
-    リビジョン必須）にフォールバックする。これにより、指番書式に一致しない過去の
-    手動命名フォルダ（例: "..._OK_01"）の解釈は変えずに、新しいリビジョン省略形
-    にも対応する。
+    台帳ファイル名（filename。"{指番}_{モジュール}_{サイド}[_-suffix].xlsx"、
+    LEDGER_FILENAME_PATTERN）を主として使う。フォルダ名（package_name。ZIP
+    ダウンロード時にユーザーが自由編集できるテキスト欄に由来し、モジュール/サイドが
+    欠落しうる）より信頼できるため（2026-08 ユーザー指摘）。
+
+    filename が未指定、またはこの規則に一致しない場合のみ、フォルダ名の厳密パターン
+    （SASHIBAN_MODULE_SIDE_PATTERN）へフォールバックする。どちらにも一致しない場合は
+    (None, None, None) を返す（この機能の対象外として扱う）。
     """
-    strict_match = SASHIBAN_MODULE_SIDE_PATTERN.match(package_name)
-    if strict_match:
-        group = f"{strict_match['shiban']}_{strict_match['module']}_{strict_match['side']}"
-        return group, strict_match['revision']
+    if filename:
+        match = LEDGER_FILENAME_PATTERN.match(os.path.basename(filename))
+        if match:
+            return match['shiban'], match['module'], match['side']
+
+    match = SASHIBAN_MODULE_SIDE_PATTERN.match(package_name)
+    if not match:
+        return None, None, None
+    return match['shiban'], match['module'], match['side']
+
+
+def parse_group_and_revision(package_name, filename=None):
+    """グループキー（指番_モジュール_サイド）とレビジョン番号（省略時は None）を
+    取り出す。一致しない場合は None を返す（この機能の対象外として扱う）。
+
+    指番/モジュール/サイドは parse_sashiban_module_side() と同じ優先順位
+    （ファイル名を主、フォルダ名の厳密パターンを従）で決定する。レビジョン番号は
+    フォルダ名（DXF-diff-managerのZIPダウンロードファイル名の命名規則
+    dxf_diff_results_Type{A/B/C}_{指番}_{モジュール}_{サイド}_{リビジョン}、または
+    リビジョン省略形〈2026-08以降〉）からのみ取得する——台帳ファイル名の末尾サフィックス
+    はリビジョン以外の自由文字列でありうる（LEDGER_FILENAME_PATTERN の "_-suffix"
+    部分）ため、レビジョンとして解釈しない（2026-08 ユーザー指摘）。
+
+    指番/モジュール/サイドがどちらの規則にも一致しない場合のみ、フォルダ名の緩い
+    パターン（GROUP_REVISION_PATTERN。groupを1文字列として緩く取り出す）へ
+    フォールバックする。これにより、指番書式に一致しない過去の手動命名フォルダ
+    （例: "..._OK_01"）の解釈は変えない。
+    """
+    sashiban, module, side = parse_sashiban_module_side(package_name, filename)
+    if sashiban is not None:
+        group = f"{sashiban}_{module}_{side}"
+        strict_match = SASHIBAN_MODULE_SIDE_PATTERN.match(package_name)
+        if strict_match:
+            return group, strict_match['revision']
+        loose_match = GROUP_REVISION_PATTERN.match(package_name)
+        if loose_match:
+            return group, loose_match['revision']
+        return group, None
 
     match = GROUP_REVISION_PATTERN.match(package_name)
     if not match:
@@ -109,16 +154,21 @@ def parse_group_and_revision(package_name):
     return match['group'], match['revision']
 
 
-def parse_sashiban_module_side(package_name):
-    """DXF-diff-managerのZIPダウンロードファイル名の命名規則から、指番・モジュール・
-    サイドを個別に取り出す。DXF-diff-manager 側で未入力（"na"）だった場合はその
-    まま文字列 "na" を返す。フォルダ名がこの命名規則に一致しない場合は
-    (None, None, None) を返す（この機能の対象外として扱う）。
+def find_entries_with_unresolved_sashiban(entries):
+    """有効な台帳として検出されたが、ファイル名・フォルダ名のどちらからも指番・
+    モジュール・サイドを特定できなかった LedgerEntry を返す。
+
+    これらのエントリは Work Master・Summary・指番_モジュール_サイド別集計から
+    黙って除外される（図形変更量詳細.xlsx には Sashiban/Module/Side が空欄のまま
+    引き続き含まれる）。台帳ファイル名が命名規則からずれている場合（2026-08
+    ユーザー報告の実例: "NE24-0062-0_ZM00_405l.xlsx" — 末尾に区切り文字
+    "_"/"-" の無い "l" が付いておりミスタイプだった）を検出し、ユーザーに知らせる
+    ための一覧。
     """
-    match = SASHIBAN_MODULE_SIDE_PATTERN.match(package_name)
-    if not match:
-        return None, None, None
-    return match['shiban'], match['module'], match['side']
+    return [
+        entry for entry in entries
+        if parse_sashiban_module_side(entry.package_name, entry.source_path)[0] is None
+    ]
 
 
 def _max_recorded_date(entry):
@@ -133,7 +183,15 @@ def group_entries(entries):
     内の最大 Recorded Date が最も新しいものだけを採用する（差分抽出のやり直しで古い
     実行結果がフォルダに残っていた場合の取り違え防止。2026-07-28 の実データで実際に
     確認したケース: 図番抽出に失敗した古い実行結果と、成功した新しい実行結果が
-    同じフォルダに混在していた）。
+    同じフォルダに混在していた）。**この「同一フォルダ内の複数候補から1つを選ぶ」
+    処理は、指番/モジュール/サイドの算出（ファイル名を主とする parse_group_and_revision
+    参照）より先に行う** — 同じフォルダ内の候補ファイルは、たとえファイル名の命名が
+    異なっていても（例: 失敗した古い実行結果の "..._na_na.xlsx" と、成功した新しい
+    実行結果の "..._ZC00_405.xlsx"）同一の実行対象として競合させ、勝者を決めてから
+    その勝者のファイル名で指番/モジュール/サイドを決定する（2026-08、フォルダ名を
+    ファイル名優先に変更した際、先に指番/モジュール/サイドで競合グループを分けて
+    しまうと、この「同一フォルダ内の取り違え防止」が機能しなくなる回帰を作ったため
+    修正）。
 
     Returns:
         dict[group_key, list[(revision, LedgerEntry)]]（レビジョン文字列の昇順。
@@ -141,15 +199,15 @@ def group_entries(entries):
     """
     by_folder = defaultdict(list)
     for entry in entries:
-        parsed = parse_group_and_revision(entry.package_name)
+        by_folder[entry.package_name].append(entry)
+
+    groups = defaultdict(list)
+    for _package_name, folder_entries in by_folder.items():
+        latest_entry = max(folder_entries, key=_max_recorded_date)
+        parsed = parse_group_and_revision(latest_entry.package_name, latest_entry.source_path)
         if parsed is None:
             continue
         group_key, revision = parsed
-        by_folder[(group_key, revision, entry.package_name)].append(entry)
-
-    groups = defaultdict(list)
-    for (group_key, revision, _package_name), folder_entries in by_folder.items():
-        latest_entry = max(folder_entries, key=_max_recorded_date)
         groups[group_key].append((revision, latest_entry))
 
     for group_key in groups:
@@ -230,8 +288,9 @@ def aggregate_input_drawing_totals_by_sashiban(entries):
     groups = group_entries(entries)
     totals_by_sashiban = defaultdict(int)
     for group_key, revision_entries in groups.items():
-        representative_package_name = revision_entries[0][1].package_name
-        sashiban, _module, _side = parse_sashiban_module_side(representative_package_name)
+        representative_entry = revision_entries[0][1]
+        sashiban, _module, _side = parse_sashiban_module_side(
+            representative_entry.package_name, representative_entry.source_path)
         if sashiban is None:
             continue
         for _revision, entry in revision_entries:

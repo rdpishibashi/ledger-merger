@@ -96,7 +96,9 @@ def extract_unique_child_parent_rows(entries):
 def _extract_unique_work_master_entries(entries):
     """(sashiban, child, parent) -> (sashiban, diff_list_row) の辞書を返す内部
     共有ヘルパー。diff_list_row は DIFF_LIST_HEADERS 12列（Relationを含む）。
-    Diff Package（出力フォルダ名）から指番を逆算できないエントリは対象外とする。
+    台帳ファイル名を主・出力フォルダ名を従として指番を逆算できないエントリは対象外
+    とする（parse_sashiban_module_side() 参照。ミスタイプ等で台帳ファイル名の命名規則
+    にも一致しない場合は find_entries_with_unresolved_sashiban() で検出できる）。
     同じキーが複数エントリにまたがる場合は "Recorded Date" が最も新しい行を採用する
     （extract_unique_child_parent_rows と同じ規則）。
 
@@ -107,7 +109,7 @@ def _extract_unique_work_master_entries(entries):
     """
     unique = {}
     for entry in entries:
-        sashiban, _module, _side = parse_sashiban_module_side(entry.package_name)
+        sashiban, _module, _side = parse_sashiban_module_side(entry.package_name, entry.source_path)
         if sashiban is None:
             continue
         for row in entry.diff_list_rows:

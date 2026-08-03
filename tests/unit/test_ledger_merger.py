@@ -250,7 +250,7 @@ def test_merged_workbook_structure():
 
     row_idx = 2
     for entry in entries:
-        sashiban, module, side = parse_sashiban_module_side(entry.package_name)
+        sashiban, module, side = parse_sashiban_module_side(entry.package_name, entry.source_path)
         for row_in_block in range(len(entry.diff_list_rows)):
             row = ws[row_idx]
             package_cell = row[-1]

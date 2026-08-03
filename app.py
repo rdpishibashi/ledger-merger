@@ -1,10 +1,11 @@
 import io
+import os
 import tempfile
 import zipfile
 
 import streamlit as st
 
-from utils.group_summary_builder import build_group_workbooks
+from utils.group_summary_builder import build_group_workbooks, find_entries_with_unresolved_sashiban
 from utils.ledger_finder import find_ledger_files, reconcile_missing_folders
 from utils.ledger_merger import build_merged_workbook
 from utils.master_ledger_builder import (
@@ -126,6 +127,12 @@ if run:
         )
         group_files = build_group_workbooks(all_entries)
 
+        unresolved_sashiban_entries = find_entries_with_unresolved_sashiban(all_entries)
+        unresolved_sashiban_names = [
+            f"{entry.package_name} / {os.path.basename(entry.source_path)}"
+            for entry in unresolved_sashiban_entries
+        ]
+
         final_zip_buffer = io.BytesIO()
         with zipfile.ZipFile(final_zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("図形変更量詳細.xlsx", merged_bytes)
@@ -137,6 +144,7 @@ if run:
         st.session_state["master_bytes"] = master_bytes
         st.session_state["merged_count"] = len(all_entries)
         st.session_state["merged_missing_folders"] = all_missing_folders
+        st.session_state["merged_unresolved_sashiban"] = unresolved_sashiban_names
         st.session_state["group_summary_count"] = len(group_files)
         st.session_state["downloaded_once"] = False
         st.rerun()
@@ -149,6 +157,18 @@ if "final_zip_bytes" in st.session_state:
     if missing_folders:
         with st.expander(f"⚠️ 台帳ファイルが見つからなかったフォルダ（{len(missing_folders)}件）"):
             for name in missing_folders:
+                st.write(f"- {name}")
+    unresolved_sashiban = st.session_state.get("merged_unresolved_sashiban") or []
+    if unresolved_sashiban:
+        with st.expander(f"⚠️ 指番を特定できなかった台帳ファイル（{len(unresolved_sashiban)}件）"):
+            st.caption(
+                "台帳ファイル名・フォルダ名のどちらからも「指番_モジュール_サイド」の"
+                "命名規則に一致しませんでした（ファイル名のミスタイプ等が原因の可能性が"
+                "あります）。これらは図形変更量詳細.xlsxには含まれますが、統合図面管理"
+                "台帳.xlsxのWork Master・Summaryおよび指番_モジュール_サイド別集計"
+                "からは除外されます。"
+            )
+            for name in unresolved_sashiban:
                 st.write(f"- {name}")
     download_done = st.session_state.get("downloaded_once", False)
     downloaded = st.download_button(
@@ -170,6 +190,7 @@ if "final_zip_bytes" in st.session_state:
                 "final_zip_bytes",
                 "merged_count",
                 "merged_missing_folders",
+                "merged_unresolved_sashiban",
                 "group_summary_count",
                 "downloaded_once",
             ):
