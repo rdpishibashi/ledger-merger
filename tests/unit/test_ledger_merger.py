@@ -11,14 +11,14 @@ Ledger-merger の回帰テスト。
     │       ZIP直下（ラッパー）に置かれた、有効な台帳フォーマットだが統合対象外の
     │       集約ファイル。より深い階層の各出力フォルダにもxlsxがあるため、
     │       中間ラッパーとして無視されるべき（ユーザー確認済みの仕様）。
-    ├── dxf_diff_results_PairA_ME24-1001-0_ZMF1_405_01/
+    ├── dxf_diff_results_TypeA_ME24-1001-0_ZMF1_405_01/
     │       有効な台帳（2行）+ dxf図面/（xlsxを含まないサブフォルダ）付き。
-    ├── dxf_diff_results_PairA_ME24-1001-0_ZMB1_405_01/
+    ├── dxf_diff_results_TypeA_ME24-1001-0_ZMB1_405_01/
     │       有効な台帳（3行）。
-    ├── dxf_diff_results_PairA_ME24-1001-0_ZMF2_405_01/
+    ├── dxf_diff_results_TypeA_ME24-1001-0_ZMF2_405_01/
     │       diff_labels.xlsx / unchanged_labels.xlsx のみで有効な台帳が無い
     │       （「台帳が見つからなかったフォルダ」として報告されるべき）。
-    └── dxf_diff_results_PairA_ME24-1001-0_ZC00_405_01〜04/
+    └── dxf_diff_results_TypeA_ME24-1001-0_ZC00_405_01〜04/
             "ME24-1001-0_ZC00_405"（指番_モジュール_サイド）1グループ・4レビジョン分。
             `_02` のみ有効な台帳が2件（ME24-1001-0_ZC00_405.xlsx と
             ME24-1001-0_na_na.xlsx、後者は図番抽出に失敗した古い実行結果の残骸）。
@@ -42,11 +42,11 @@ REAL_DATA_ROOT = os.path.join(
     os.path.dirname(__file__), "..", "fixtures", "dxf_diff_manager_output"
 )
 SAMPLE_LEDGER_DIR = os.path.join(
-    REAL_DATA_ROOT, "dxf_diff_results_PairA_ME24-1001-0_ZMF1_405_01"
+    REAL_DATA_ROOT, "dxf_diff_results_TypeA_ME24-1001-0_ZMF1_405_01"
 )
 SAMPLE_LEDGER_FILENAME = "ME24-1001-0_ZMF1_405.xlsx"
 
-MISSING_LEDGER_FOLDER_NAME = "dxf_diff_results_PairA_ME24-1001-0_ZMF2_405_01"
+MISSING_LEDGER_FOLDER_NAME = "dxf_diff_results_TypeA_ME24-1001-0_ZMF2_405_01"
 
 
 def test_find_ledger_files_count_matches_actual_files():
@@ -57,12 +57,12 @@ def test_find_ledger_files_count_matches_actual_files():
 
     assert len(entries) == 7
     assert {e.package_name for e in entries} == {
-        "dxf_diff_results_PairA_ME24-1001-0_ZMF1_405_01",
-        "dxf_diff_results_PairA_ME24-1001-0_ZMB1_405_01",
-        "dxf_diff_results_PairA_ME24-1001-0_ZC00_405_01",
-        "dxf_diff_results_PairA_ME24-1001-0_ZC00_405_02",
-        "dxf_diff_results_PairA_ME24-1001-0_ZC00_405_03",
-        "dxf_diff_results_PairA_ME24-1001-0_ZC00_405_04",
+        "dxf_diff_results_TypeA_ME24-1001-0_ZMF1_405_01",
+        "dxf_diff_results_TypeA_ME24-1001-0_ZMB1_405_01",
+        "dxf_diff_results_TypeA_ME24-1001-0_ZC00_405_01",
+        "dxf_diff_results_TypeA_ME24-1001-0_ZC00_405_02",
+        "dxf_diff_results_TypeA_ME24-1001-0_ZC00_405_03",
+        "dxf_diff_results_TypeA_ME24-1001-0_ZC00_405_04",
     }
     assert missing_folders == [MISSING_LEDGER_FOLDER_NAME]
 
@@ -82,14 +82,14 @@ def test_non_ledger_filenames_excluded_and_not_reported_as_missing():
 def test_folder_with_only_non_ledger_files_is_reported_as_missing_by_name_only(tmp_path):
     """diff_labels.xlsx / unchanged_labels.xlsx しか無いフォルダは「台帳が見つからない
     フォルダ」として basename のみで報告され、台帳が存在するフォルダは混在しても無視されない。"""
-    ok_dir = tmp_path / "dxf_diff_results_PairC_OK_01"
+    ok_dir = tmp_path / "dxf_diff_results_TypeC_OK_01"
     ok_dir.mkdir()
     shutil.copy(
         os.path.join(SAMPLE_LEDGER_DIR, SAMPLE_LEDGER_FILENAME),
         ok_dir / SAMPLE_LEDGER_FILENAME,
     )
 
-    missing_dir = tmp_path / "dxf_diff_results_PairC_MISSING_01"
+    missing_dir = tmp_path / "dxf_diff_results_TypeC_MISSING_01"
     missing_dir.mkdir()
     shutil.copy(os.path.join(SAMPLE_LEDGER_DIR, "diff_labels.xlsx"), missing_dir / "diff_labels.xlsx")
     shutil.copy(os.path.join(SAMPLE_LEDGER_DIR, "unchanged_labels.xlsx"), missing_dir / "unchanged_labels.xlsx")
@@ -97,8 +97,8 @@ def test_folder_with_only_non_ledger_files_is_reported_as_missing_by_name_only(t
     entries, missing_folders = find_ledger_files(str(tmp_path))
 
     assert len(entries) == 1
-    assert entries[0].package_name == "dxf_diff_results_PairC_OK_01"
-    assert missing_folders == ["dxf_diff_results_PairC_MISSING_01"]
+    assert entries[0].package_name == "dxf_diff_results_TypeC_OK_01"
+    assert missing_folders == ["dxf_diff_results_TypeC_MISSING_01"]
 
 
 def test_rows_without_diff_stats_are_excluded(tmp_path):
@@ -110,7 +110,7 @@ def test_rows_without_diff_stats_are_excluded(tmp_path):
     合成して検証する（決定的なテストにするため）。"""
     from openpyxl import Workbook
 
-    path = tmp_path / "dxf_diff_results_PairX_ME00-0000-0_01" / "ME00-0000-0_ZZ00_000.xlsx"
+    path = tmp_path / "dxf_diff_results_TypeX_ME00-0000-0_01" / "ME00-0000-0_ZZ00_000.xlsx"
     path.parent.mkdir(parents=True)
 
     wb = Workbook()
@@ -178,7 +178,7 @@ def test_filtered_rows_entity_sums_match_summary_exactly():
 def test_filtered_rows_preserve_original_order_and_values():
     """除外後に残る行は、元の Diff List シートの該当行を順序・値ともに
     そのまま保持している（並び替えやデータ欠落が無いことの往復確認）。"""
-    from utils.ledger_finder import _TOTAL_ENTITIES_COL
+    from utils.ledger_finder import TOTAL_COL
 
     entries, _missing_folders = find_ledger_files(REAL_DATA_ROOT)
     for entry in entries:
@@ -187,7 +187,7 @@ def test_filtered_rows_preserve_original_order_and_values():
             src_rows = list(wb["Diff List"].iter_rows(values_only=True))[1:]
         finally:
             wb.close()
-        expected = [row for row in src_rows if row[_TOTAL_ENTITIES_COL] is not None]
+        expected = [row for row in src_rows if row[TOTAL_COL] is not None]
         assert list(entry.diff_list_rows) == expected
 
 
@@ -208,21 +208,21 @@ def test_macosx_mirror_folder_not_reported_as_missing(tmp_path):
     作られる。これが本物のフォルダと同名の偽フォルダとして誤検出されないことを確認する
     （実際に発生した不具合: 台帳が見つかるフォルダ名がそのまま「見つからなかったフォルダ」
     にも重複して表示されていた）。"""
-    real_dir = tmp_path / "dxf_diff_results_PairC_OK_01"
+    real_dir = tmp_path / "dxf_diff_results_TypeC_OK_01"
     real_dir.mkdir()
     shutil.copy(
         os.path.join(SAMPLE_LEDGER_DIR, SAMPLE_LEDGER_FILENAME),
         real_dir / SAMPLE_LEDGER_FILENAME,
     )
 
-    mirror_dir = tmp_path / "__MACOSX" / "dxf_diff_results_PairC_OK_01"
+    mirror_dir = tmp_path / "__MACOSX" / "dxf_diff_results_TypeC_OK_01"
     mirror_dir.mkdir(parents=True)
     (mirror_dir / f"._{SAMPLE_LEDGER_FILENAME}").write_bytes(b"\x00\x05\x16\x07")  # AppleDouble ダミー
 
     entries, missing_folders = find_ledger_files(str(tmp_path))
 
     assert len(entries) == 1
-    assert entries[0].package_name == "dxf_diff_results_PairC_OK_01"
+    assert entries[0].package_name == "dxf_diff_results_TypeC_OK_01"
     assert missing_folders == []
 
 
@@ -384,11 +384,11 @@ def test_merged_workbook_row_has_diff_type_and_moved_note_recorded_date():
     Diff Type, Deleted/Added/Diff/Unchanged/Total Entities, 削除/追加/変更図形数
     合計・図形総数 合計・図形変更率 [%]、Note, Recorded Date, Diff Package
     （2026-08、ユーザー要望。Master/Work Masterと同じ並び替えパターン）。Diff Type
-    はDiff Package（"dxf_diff_results_PairA_..."）の"A"が入る。"""
+    はDiff Package（"dxf_diff_results_TypeA_..."）の"A"が入る。"""
     from datetime import datetime
 
     entry = LedgerEntry(
-        package_name="dxf_diff_results_PairA_AA10-0001-0_ZM00_405", source_path="a.xlsx",
+        package_name="dxf_diff_results_TypeA_AA10-0001-0_ZM00_405", source_path="a.xlsx",
         diff_list_rows=[
             ("C1", "P1", "RevUp", "T", "S", datetime(2026, 8, 6), "メモ", 1, 2, 3, 4, 10),
         ],
@@ -409,7 +409,7 @@ def test_merged_workbook_row_has_diff_type_and_moved_note_recorded_date():
         "削除図形数 合計": 1, "追加図形数 合計": 2, "変更図形数 合計": 3,
         "図形総数 合計": 10, "図形変更率 [%]": 0.3,
         "Note": "メモ", "Recorded Date": datetime(2026, 8, 6),
-        "Diff Package": "dxf_diff_results_PairA_AA10-0001-0_ZM00_405",
+        "Diff Package": "dxf_diff_results_TypeA_AA10-0001-0_ZM00_405",
     }
 
 

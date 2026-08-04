@@ -8,9 +8,8 @@ Streamlit には依存しない。
 実行時にアップロードすると、今回新たに得られたデータで既存行とマージする
 （Master・Work Masterともに同じ蓄積方式）。同じキーが前回・今回の両方にある場合、
 または今回の入力内で複数フォルダにまたがる場合は、"Recorded Date" が最も新しい行を
-採用する（2026-08、同一 Child-Parent ペアが複数の DXF-diff-manager出力フォルダに
-異なる実行時刻で記録されるケースが実データで確認されたための変更。それまでは
-先勝ち〈今回データが常に前回を上書き〉だった）。
+採用する（同一 Child-Parent ペアが複数の DXF-diff-manager出力フォルダに異なる
+実行時刻で記録されることがあるため、常に最新の実行結果を残す）。
 
 "Summary" は指番・差分方式ごとに、今回アップロードしたZIPのデータのみから算出した
 集計値を1行として毎回追記していく（Master/Work Masterのようなキー単位のマージ・
@@ -31,7 +30,21 @@ from utils.group_summary_builder import (
     parse_diff_type,
     parse_sashiban_module_side,
 )
-from utils.ledger_finder import DIFF_LIST_HEADERS
+from utils.ledger_finder import (
+    ADDED_COL,
+    CHILD_COL,
+    DELETED_COL,
+    DIFF_COL,
+    ENTITY_LABELS,
+    NOTE_COL,
+    PARENT_COL,
+    RECORDED_DATE_COL,
+    RELATION_COL,
+    SUBTITLE_COL,
+    TITLE_COL,
+    TOTAL_COL,
+    UNCHANGED_COL,
+)
 
 MASTER_SHEET_NAME = "Master"
 WORK_MASTER_SHEET_NAME = "Work Master"
@@ -42,26 +55,10 @@ SUMMARY_SHEET_NAME = "Summary"
 BRAND_NEW_RELATION = "完全新規図面"
 
 CENTER_ALIGNMENT = Alignment(horizontal="center")
-_ENTITY_LABELS = ("Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities", "Total Entities")
-_CHILD_COL = DIFF_LIST_HEADERS.index("Child")
-_PARENT_COL = DIFF_LIST_HEADERS.index("Parent")
-_RELATION_COL = DIFF_LIST_HEADERS.index("Relation")
-_TITLE_COL = DIFF_LIST_HEADERS.index("Title")
-_SUBTITLE_COL = DIFF_LIST_HEADERS.index("Subtitle")
-_RECORDED_DATE_COL = DIFF_LIST_HEADERS.index("Recorded Date")
-_NOTE_COL = DIFF_LIST_HEADERS.index("Note")
-_DELETED_COL = DIFF_LIST_HEADERS.index("Deleted Entities")
-_ADDED_COL = DIFF_LIST_HEADERS.index("Added Entities")
-_DIFF_COL = DIFF_LIST_HEADERS.index("Diff Entities")
-_UNCHANGED_COL = DIFF_LIST_HEADERS.index("Unchanged Entities")
-_TOTAL_COL = DIFF_LIST_HEADERS.index("Total Entities")
 
-# Master の列構成（2026-08、Work Masterと同じ並び替えパターンを適用。Sashiban・
-# Module・Side は追加しない——Master は指番を問わず Child-Parent 単位で全体を
-# ユニーク化するシートであり、Work Masterとはフィールド構成が異なる。ユーザー確認
-# 済み：DIFF_LIST_HEADERSの並びをそのまま転記する方式から、明示的な列順の指定に
-# 変更し、Subtitleと Deleted Entitiesの間に Diff Type を追加、Note・Recorded Date
-# を Total Entities の後ろへ移動）。
+# Master の列構成。Sashiban・Module・Side は含まない——Master は指番を問わず
+# Child-Parent 単位で全体をユニーク化するシートであり、Work Masterとはフィールド
+# 構成が異なる。
 MASTER_HEADERS = (
     "Child", "Parent", "Relation", "Title", "Subtitle", "Diff Type",
     "Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities",
@@ -70,10 +67,7 @@ MASTER_HEADERS = (
 _MASTER_DIFF_TYPE_COL = MASTER_HEADERS.index("Diff Type")
 _MASTER_RECORDED_DATE_COL = MASTER_HEADERS.index("Recorded Date")
 
-# Work Master の列構成（2026-08、Sashiban と Child の間に Module・Side を追加した後、
-# さらに Subtitle と Deleted Entities の間に Diff Type を追加し、Note・Recorded Date を
-# Total Entities の後ろへ移動——DIFF_LIST_HEADERS の並びをそのまま転記する方式から、
-# 明示的な列順の指定に変更）。
+# Work Master の列構成。Master と異なり Sashiban・Module・Side を Child の前に持つ。
 WORK_MASTER_HEADERS = (
     "Sashiban", "Module", "Side", "Child", "Parent", "Title", "Subtitle", "Diff Type",
     "Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities",
@@ -83,10 +77,10 @@ _WM_RECORDED_DATE_COL = WORK_MASTER_HEADERS.index("Recorded Date")
 
 # Summaryシートは指番・差分方式ごとの実行時点のスナップショットを追記するログ形式。
 # 列名はユーザー指定のとおり日本語（既存のMaster/Work Masterの英語列名とは別扱い）。
-# 「完全新規図面数」「新規作成率 [%]」は2026-08追加（DXF-diff-manager Summaryシートの
-# 対応する2指標と同じ相対位置：差分ペア総数の直下・流用率[%]の直下）。「差分方式」も
-# 2026-08追加（指番の直後。Diff Package から parse_diff_type() で逆算。同一指番内で
-# 差分方式が異なる場合は別行に分ける——ユーザー確認済み仕様）。
+# 「完全新規図面数」「新規作成率 [%]」は DXF-diff-manager Summaryシートの対応する
+# 2指標と同じ相対位置（差分ペア総数の直下・流用率[%]の直下）。「差分方式」は指番の
+# 直後（Diff Package から parse_diff_type() で逆算。同一指番内で差分方式が異なる
+# 場合は別行に分ける）。
 SUMMARY_HEADERS = (
     "指番", "差分方式", "削除図形総数", "追加図形総数", "変更図形総数", "図形総数",
     "図形変更率 [%]", "差分ペア総数", "完全新規図面数", "指番図面総数",
@@ -109,9 +103,7 @@ def _recorded_date_or_min(value):
 def extract_unique_child_parent_rows(entries):
     """LedgerEntry のリストから、"Child"-"Parent" ペアでユニーク化した
     MASTER_HEADERS 13列のデータを返す。同じペアが複数エントリにまたがる場合は
-    "Recorded Date" が最も新しい行を採用する（2026-08、同一ペアが複数の
-    DXF-diff-manager出力フォルダに異なる実行時刻で記録される実データケースを
-    確認したための変更。それまでは先勝ちだった）。Diff Type は Diff Package
+    "Recorded Date" が最も新しい行を採用する。Diff Type は Diff Package
     （出力フォルダ名）から parse_diff_type() で逆算する（指番の解決可否に関わらず
     全エントリが対象——Master は Work Master と異なり指番不明のエントリも含むため）。
 
@@ -122,11 +114,11 @@ def extract_unique_child_parent_rows(entries):
     for entry in entries:
         diff_type = parse_diff_type(entry.package_name)
         for row in entry.diff_list_rows:
-            key = (row[_CHILD_COL], row[_PARENT_COL])
+            key = (row[CHILD_COL], row[PARENT_COL])
             candidate = (
-                row[_CHILD_COL], row[_PARENT_COL], row[_RELATION_COL], row[_TITLE_COL], row[_SUBTITLE_COL],
-                diff_type, row[_DELETED_COL], row[_ADDED_COL], row[_DIFF_COL], row[_UNCHANGED_COL],
-                row[_TOTAL_COL], row[_NOTE_COL], row[_RECORDED_DATE_COL],
+                row[CHILD_COL], row[PARENT_COL], row[RELATION_COL], row[TITLE_COL], row[SUBTITLE_COL],
+                diff_type, row[DELETED_COL], row[ADDED_COL], row[DIFF_COL], row[UNCHANGED_COL],
+                row[TOTAL_COL], row[NOTE_COL], row[RECORDED_DATE_COL],
             )
             existing = unique.get(key)
             if existing is None or (
@@ -156,10 +148,10 @@ def _extract_unique_work_master_entries(entries, key_by_module_side=False):
     形式でRelationを保持しておく必要がある。
 
     key_by_module_side: True にすると、同一 (指番, Child, Parent) が複数のモジュール/
-    サイドに跨る場合（実データで確認済み）にそれぞれ別行として残す。Summary側は
+    サイドに跨る場合にそれぞれ別行として残す（Work Master側）。Summary側は
     key_by_module_side=False（既定）のまま据え置く——含めると「差分ペア総数」が
     DXF-diff-manager 自身の「差分抽出ペア数」の定義（グループごとの合計）とずれる
-    ため（2026-08、Work Master に Module/Side 列を追加した際の実データ検証で判明）。
+    ため。
     """
     unique = {}
     for entry in entries:
@@ -169,14 +161,14 @@ def _extract_unique_work_master_entries(entries, key_by_module_side=False):
         diff_type = parse_diff_type(entry.package_name)
         for row in entry.diff_list_rows:
             key = (
-                (sashiban, module, side, row[_CHILD_COL], row[_PARENT_COL])
+                (sashiban, module, side, row[CHILD_COL], row[PARENT_COL])
                 if key_by_module_side
-                else (sashiban, row[_CHILD_COL], row[_PARENT_COL])
+                else (sashiban, row[CHILD_COL], row[PARENT_COL])
             )
             existing = unique.get(key)
             if existing is None or (
-                _recorded_date_or_min(row[_RECORDED_DATE_COL])
-                > _recorded_date_or_min(existing[4][_RECORDED_DATE_COL])
+                _recorded_date_or_min(row[RECORDED_DATE_COL])
+                > _recorded_date_or_min(existing[4][RECORDED_DATE_COL])
             ):
                 unique[key] = (sashiban, module, side, diff_type, row)
     return unique
@@ -197,10 +189,10 @@ def extract_unique_work_master_rows(entries):
         entries, key_by_module_side=True,
     ).items():
         result[key] = (
-            sashiban, module, side, row[_CHILD_COL], row[_PARENT_COL],
-            row[_TITLE_COL], row[_SUBTITLE_COL], diff_type,
-            row[_DELETED_COL], row[_ADDED_COL], row[_DIFF_COL], row[_UNCHANGED_COL], row[_TOTAL_COL],
-            row[_NOTE_COL], row[_RECORDED_DATE_COL],
+            sashiban, module, side, row[CHILD_COL], row[PARENT_COL],
+            row[TITLE_COL], row[SUBTITLE_COL], diff_type,
+            row[DELETED_COL], row[ADDED_COL], row[DIFF_COL], row[UNCHANGED_COL], row[TOTAL_COL],
+            row[NOTE_COL], row[RECORDED_DATE_COL],
         )
     return result
 
@@ -208,9 +200,7 @@ def extract_unique_work_master_rows(entries):
 def read_master_rows(file_bytes):
     """アップロードされた統合図面管理台帳.xlsx（Masterシートのみ）から
     (child, parent) をキーとする行の辞書を読み込む。シート構成が想定と異なる
-    （壊れている、別ファイル等。旧12列形式〈Diff Type追加・Note/Recorded Date
-    移動前〉も含む）場合は None を返す。先頭2列（Child, Parent）の位置は列構成
-    変更の前後で変わらないため、キーの取り出し方自体は変更不要。
+    （壊れている、別ファイル等）場合は None を返す。
     """
     try:
         wb = load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
@@ -224,7 +214,7 @@ def read_master_rows(file_bytes):
         rows = list(ws.iter_rows(values_only=True))
         if not rows or tuple(rows[0]) != MASTER_HEADERS:
             return None
-        return {(row[_CHILD_COL], row[_PARENT_COL]): tuple(row) for row in rows[1:]}
+        return {(row[CHILD_COL], row[PARENT_COL]): tuple(row) for row in rows[1:]}
     finally:
         wb.close()
 
@@ -232,13 +222,8 @@ def read_master_rows(file_bytes):
 def read_work_master_rows(file_bytes):
     """アップロードされた統合図面管理台帳.xlsxのWork Masterシートから
     (sashiban, module, side, child, parent) をキーとする行の辞書を読み込む。
-    シートが存在しない（旧バージョンで作成されたファイル等）・構成が想定と異なる
-    場合は None を返す（呼び出し側は今回分のみで新規作成する。Work Master が
-    Diff Type・Note/Recorded Date の位置を持たない旧12列・14列形式だった場合も
-    ヘッダー不一致で None になり、警告なしに今回分のみへフォールバックする——
-    設計判断によりこの移行時の蓄積データ読み捨ては許容している）。先頭5列
-    （Sashiban, Module, Side, Child, Parent）の位置は列追加・並び替えの前後で
-    変わらないため、キーの取り出し方（row[0]〜row[4]）自体は変更不要。
+    シートが存在しない・構成が想定と異なる場合は None を返す（呼び出し側は今回分
+    のみで新規作成する。Masterと異なりこの場合は警告を出さない）。
     """
     try:
         wb = load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
@@ -294,18 +279,15 @@ def compute_summary_rows(entries, run_timestamp):
     """今回のZIP入力（entries）のみから、(指番, 差分方式) ごとのSummary行
     （SUMMARY_HEADERS 13列）を算出する。指番を逆算できないエントリは対象外
     （Work Masterと同じ扱い）。差分方式は Diff Package から parse_diff_type() で
-    逆算し、同一指番内で異なる差分方式が混在する場合は別行に分ける（2026-08、
-    ユーザー確認済み仕様。実データでは指番内で差分方式が揃っているケースしか
-    確認していないが、混在した場合も指番と差分方式の組ごとに集計を分離することで
-    値が誤って混ざらないようにする）。
+    逆算し、同一指番内で異なる差分方式が混在する場合は別行に分ける（値が誤って
+    混ざらないようにするため）。
 
     「完全新規図面数」は Relation == BRAND_NEW_RELATION の行の Child ユニーク数、
     「差分ペア総数」はそれ以外（完全新規図面を除く）の (Child, Parent) ユニーク数
-    （2026-08、DXF-diff-manager 自身の「差分抽出ペア数」〈status=='complete' の
-    ペア数、完全新規図面を含まない〉と定義を揃えるための変更。それまでは完全新規
-    図面の行も差分ペア総数に含めていた）。削除/追加/変更/図形総数のエンティティ
-    統計は、完全新規図面の行も含めたまま合計する（DXF-diff-manager 側の集計と
-    同じ範囲）。
+    （DXF-diff-manager 自身の「差分抽出ペア数」〈status=='complete' のペア数、
+    完全新規図面を含まない〉と定義を揃えている）。削除/追加/変更/図形総数の
+    エンティティ統計は、完全新規図面の行も含めたまま合計する（DXF-diff-manager
+    側の集計と同じ範囲）。
 
     Returns:
         list[tuple]（指番昇順、同一指番内は差分方式昇順。差分方式が逆算できない
@@ -321,15 +303,15 @@ def compute_summary_rows(entries, run_timestamp):
     summary_rows = []
     for sashiban, diff_type in sorted(rows_by_sashiban_type.keys(), key=lambda k: (k[0], k[1] is None, k[1] or "")):
         rows = rows_by_sashiban_type[(sashiban, diff_type)]
-        deleted_total = _numeric_sum(rows, _DELETED_COL)
-        added_total = _numeric_sum(rows, _ADDED_COL)
+        deleted_total = _numeric_sum(rows, DELETED_COL)
+        added_total = _numeric_sum(rows, ADDED_COL)
         changed_total = deleted_total + added_total
-        entity_total = _numeric_sum(rows, _TOTAL_COL)
+        entity_total = _numeric_sum(rows, TOTAL_COL)
         change_rate = (changed_total / entity_total) if entity_total else 0.0
 
-        brand_new_children = {row[_CHILD_COL] for row in rows if row[_RELATION_COL] == BRAND_NEW_RELATION}
+        brand_new_children = {row[CHILD_COL] for row in rows if row[RELATION_COL] == BRAND_NEW_RELATION}
         brand_new_count = len(brand_new_children)
-        pair_count = sum(1 for row in rows if row[_RELATION_COL] != BRAND_NEW_RELATION)
+        pair_count = sum(1 for row in rows if row[RELATION_COL] != BRAND_NEW_RELATION)
 
         input_drawing_total = input_drawing_totals.get((sashiban, diff_type), 0)
         reuse_rate = (pair_count / input_drawing_total) if input_drawing_total else 0.0
@@ -351,10 +333,8 @@ def _write_ledger_sheet(ws, headers, combined_rows, sort_key, recorded_date_col_
     ws.freeze_panes = "A2"
 
     recorded_date_col = recorded_date_col_idx + 1
-    entity_cols = [headers.index(label) + 1 for label in _ENTITY_LABELS]
-    # Diff Type は Master・Work Master 共通の列（2026-08追加）。中央揃いにする
-    # （ユーザー要望）。
-    diff_type_col = headers.index("Diff Type") + 1 if "Diff Type" in headers else None
+    entity_cols = [headers.index(label) + 1 for label in ENTITY_LABELS]
+    diff_type_col = headers.index("Diff Type") + 1
 
     for key in sorted(combined_rows.keys(), key=sort_key):
         ws.append(combined_rows[key])
@@ -364,8 +344,7 @@ def _write_ledger_sheet(ws, headers, combined_rows, sort_key, recorded_date_col_
             cell = ws.cell(row=row_idx, column=col)
             cell.number_format = "#,##0"
             cell.alignment = CENTER_ALIGNMENT
-        if diff_type_col is not None:
-            ws.cell(row=row_idx, column=diff_type_col).alignment = CENTER_ALIGNMENT
+        ws.cell(row=row_idx, column=diff_type_col).alignment = CENTER_ALIGNMENT
 
     for col_idx, header in enumerate(headers, start=1):
         width = max(len(str(header)) + 2, 12)
@@ -406,8 +385,7 @@ def _write_summary_sheet(ws, previous_rows, new_rows):
 def _merge_by_recorded_date(previous_rows, new_rows, recorded_date_col_idx):
     """previous_rows・new_rows（同じキー形状の辞書）をマージする。同じキーが
     両方に存在する場合は "Recorded Date" が新しい方（同日時なら今回分）を採用する。
-    前回のみに存在するキーはそのまま保持し、今回のみに存在するキーは追加する
-    （2026-08、それまでの「今回データが常に前回を上書き」から変更）。
+    前回のみに存在するキーはそのまま保持し、今回のみに存在するキーは追加する。
     """
     combined = dict(previous_rows or {})
     for key, new_row in (new_rows or {}).items():
@@ -444,13 +422,12 @@ def build_master_workbook(
     wb = Workbook()
     ws = wb.active
     ws.title = MASTER_SHEET_NAME
-    # 並び順は Child → Diff Type（2026-08、ユーザー要望により Diff Type を
-    # ソートキーに追加。Child が全体を通じて昇順になることを優先し、Diff Type は
-    # 同一Childが複数のDiff Typeに跨る場合のタイブレークとして使う（Diff Typeを
-    # 優先すると、Diff Type混在時にChild列が全体としては昇順に見えなくなるため、
-    # 2026-08、ユーザー指摘により優先順位を逆転）。Diff Type はキー〈child, parent〉
-    # ではなく行の値側にあるため、combined_master から都度引いて判定する。
-    # None〈逆算不可〉は同一Child内で末尾に回す。
+    # 並び順は Child → Diff Type。Child が全体を通じて昇順になることを優先し、
+    # Diff Type は同一Childが複数のDiff Typeに跨る場合のタイブレークとしてのみ
+    # 使う（Diff Typeを優先すると、Diff Type混在時にChild列が全体としては昇順に
+    # 見えなくなる）。Diff Type はキー〈child, parent〉ではなく行の値側にあるため、
+    # combined_master から都度引いて判定する。None〈逆算不可〉は同一Child内で
+    # 末尾に回す。
     _write_ledger_sheet(
         ws, MASTER_HEADERS, combined_master,
         sort_key=lambda k: (

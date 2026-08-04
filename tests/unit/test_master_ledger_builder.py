@@ -126,7 +126,7 @@ def test_read_master_rows_returns_none_for_invalid_file():
 
 # --- Work Master ---
 
-_MATCHING_PACKAGE_NAME = "dxf_diff_results_PairA_ME24-1001-0_ZC00_405_01"
+_MATCHING_PACKAGE_NAME = "dxf_diff_results_TypeA_ME24-1001-0_ZC00_405_01"
 _MATCHING_PACKAGE_NAME_2 = "dxf_diff_results_TypeB_ME24-1001-0_ZMF1_405_02"
 _UNRESOLVABLE_PACKAGE_NAME = "some_manually_named_folder"
 
@@ -165,7 +165,7 @@ def test_extract_unique_work_master_rows_excludes_relation_and_includes_sashiban
     """列順は Sashiban, Module, Side, Child, Parent, Title, Subtitle, Diff Type,
     Deleted/Added/Diff/Unchanged/Total Entities, Note, Recorded Date（2026-08、
     Diff Type追加とNote/Recorded Dateの末尾移動後の構成）。Diff Type は
-    package_name（"dxf_diff_results_PairA_..."）の "A" が入る。"""
+    package_name（"dxf_diff_results_TypeA_..."）の "A" が入る。"""
     entry = LedgerEntry(
         package_name=_MATCHING_PACKAGE_NAME, source_path="a.xlsx",
         diff_list_rows=[_row("C1", "P1", datetime(2026, 7, 1), deleted=10, added=20, diff=30, unchanged=40, total=50)],
@@ -265,7 +265,7 @@ def test_compute_summary_rows_values():
     本テストのデータは全行 Relation='RevUp' のため完全新規図面は0件（完全新規図面の
     除外・カウントの検証は test_compute_summary_rows_excludes_brand_new_from_pair_count
     参照）。指番図面総数は指番_モジュール_サイド別集計と同じ「アップロード図面総数」
-    TOTAL値。差分方式（"dxf_diff_results_PairA_..."から逆算される"A"）は2026-08追加。"""
+    TOTAL値。差分方式（"dxf_diff_results_TypeA_..."から逆算される"A"）は2026-08追加。"""
     entry = LedgerEntry(
         package_name=_MATCHING_PACKAGE_NAME, source_path="a.xlsx",
         diff_list_rows=[

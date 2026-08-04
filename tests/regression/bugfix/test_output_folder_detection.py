@@ -48,7 +48,7 @@ def test_output_folder_with_non_xlsx_subfolder_is_detected():
     `dxf図面` 自体は「台帳が見つからないフォルダ」に混入しない。"""
     entries, missing_folders = find_ledger_files(REAL_DATA_ROOT)
 
-    zmf1_entries = [e for e in entries if e.package_name == "dxf_diff_results_PairA_ME24-1001-0_ZMF1_405_01"]
+    zmf1_entries = [e for e in entries if e.package_name == "dxf_diff_results_TypeA_ME24-1001-0_ZMF1_405_01"]
     assert len(zmf1_entries) == 1
     assert len(zmf1_entries[0].diff_list_rows) == 2
 
