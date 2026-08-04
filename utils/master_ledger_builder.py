@@ -382,10 +382,12 @@ def _write_summary_sheet(ws, previous_rows, new_rows):
     count_cols = [SUMMARY_HEADERS.index(label) + 1 for label in _SUMMARY_COUNT_LABELS]
     percent_cols = [SUMMARY_HEADERS.index(label) + 1 for label in _SUMMARY_PERCENT_LABELS]
     date_col = _SUMMARY_DATE_COL + 1
+    diff_type_col = SUMMARY_HEADERS.index("差分方式") + 1
 
     for row in list(previous_rows) + list(new_rows):
         ws.append(row)
         row_idx = ws.max_row
+        ws.cell(row=row_idx, column=diff_type_col).alignment = CENTER_ALIGNMENT
         for col in count_cols:
             cell = ws.cell(row=row_idx, column=col)
             cell.number_format = "#,##0"
