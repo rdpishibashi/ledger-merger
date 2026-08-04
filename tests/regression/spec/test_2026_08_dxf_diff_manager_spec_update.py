@@ -114,10 +114,10 @@ def test_master_accumulation_merge_keeps_newer_previous_row():
     wb = openpyxl.load_workbook(io.BytesIO(merged_bytes))
 
     master_row = next(r for r in wb["Master"].iter_rows(min_row=2, values_only=True) if r[0] == "C1")
-    assert master_row[7] == 999  # 前回（より新しいRecorded Date）の値が保持される
+    assert master_row[6] == 999  # 前回（より新しいRecorded Date）の値が保持される
 
-    wm_row = next(r for r in wb["Work Master"].iter_rows(min_row=2, values_only=True) if r[1] == "C1")
-    assert wm_row[7] == 999  # Work Masterも同様の規則
+    wm_row = next(r for r in wb["Work Master"].iter_rows(min_row=2, values_only=True) if r[3] == "C1")
+    assert wm_row[8] == 999  # Work Masterも同様の規則
 
 
 def test_master_accumulation_merge_overwrites_with_newer_incoming_row():
@@ -140,14 +140,20 @@ def test_master_accumulation_merge_overwrites_with_newer_incoming_row():
     wb = openpyxl.load_workbook(io.BytesIO(merged_bytes))
 
     master_row = next(r for r in wb["Master"].iter_rows(min_row=2, values_only=True) if r[0] == "C1")
-    assert master_row[7] == 999
+    assert master_row[6] == 999
 
 
 def test_within_run_duplicate_pair_picks_latest_recorded_date():
     """今回アップロードした複数フォルダに同一Child-Parentペアが異なる実行時刻で
     記録されている場合（2026-08に実データで確認：同一図番ペアがZC00・ZM00の
-    両フォルダに記録され、Recorded Dateが異なっていた）、Recorded Dateが最も
-    新しい行が採用される（登場順ではなく日時で判定されることを確認する）。"""
+    両フォルダに記録され、Recorded Dateが異なっていた）、Masterシート
+    （モジュール/サイドを持たない）ではRecorded Dateが最も新しい行が採用される
+    （登場順ではなく日時で判定されることを確認する）。
+
+    Work Masterシートはモジュール/サイドをキーに含む（2026-08、Sashiban と Child
+    の間に Module・Side 列を追加した際の仕様）ため、この例のように異なるモジュール
+    （ZC00・ZM00）に記録された同一Child-Parentは別行として両方残る——このケースは
+    重複ではなく、それぞれ別モジュールの実データを表しているため。"""
     entry_appearing_first_but_older = LedgerEntry(
         package_name="dxf_diff_results_TypeA_ME24-1001-0_ZC00_405", source_path="a.xlsx",
         diff_list_rows=[_row("C1", "P1", "RevUp", datetime(2026, 8, 1, 17, 0), deleted=1)],
@@ -162,9 +168,10 @@ def test_within_run_duplicate_pair_picks_latest_recorded_date():
     unique = extract_unique_child_parent_rows(
         [entry_appearing_first_but_older, entry_appearing_second_but_newer]
     )
-    assert unique[("C1", "P1")][7] == 999
+    assert unique[("C1", "P1")][6] == 999
 
     unique_wm = extract_unique_work_master_rows(
         [entry_appearing_first_but_older, entry_appearing_second_but_newer]
     )
-    assert unique_wm[("ME24-1001-0", "C1", "P1")][7] == 999
+    assert unique_wm[("ME24-1001-0", "ZC00", "405", "C1", "P1")][8] == 1
+    assert unique_wm[("ME24-1001-0", "ZM00", "405", "C1", "P1")][8] == 999

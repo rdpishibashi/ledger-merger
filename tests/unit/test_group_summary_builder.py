@@ -15,6 +15,7 @@ from utils.group_summary_builder import (
     aggregate_diff_list_by_child,
     build_group_workbooks,
     group_entries,
+    parse_diff_type,
     parse_group_and_revision,
     parse_sashiban_module_side,
 )
@@ -30,28 +31,21 @@ def _row(child, parent, relation, recorded_date, deleted, added, diff, unchanged
 
 
 def test_parse_group_and_revision():
-    assert parse_group_and_revision("dxf_diff_results_PairA_ME24-1001-0_ZC00_405_04") == (
-        "ME24-1001-0_ZC00_405", "04",
-    )
-    assert parse_group_and_revision("dxf_diff_results_PairC_ME24-1001-0_ZMB1_405_01") == (
-        "ME24-1001-0_ZMB1_405", "01",
-    )
-
-
-def test_parse_group_and_revision_accepts_new_type_naming():
-    """DXF-diff-manager が2026-07-28以降に自動生成する命名規則（"Type"トークン）にも対応する。"""
     assert parse_group_and_revision("dxf_diff_results_TypeA_ME24-1001-0_ZC00_405_04") == (
         "ME24-1001-0_ZC00_405", "04",
+    )
+    assert parse_group_and_revision("dxf_diff_results_TypeC_ME24-1001-0_ZMB1_405_01") == (
+        "ME24-1001-0_ZMB1_405", "01",
     )
 
 
 def test_parse_group_and_revision_returns_none_for_unrelated_names():
     assert parse_group_and_revision("some_other_folder") is None
-    assert parse_group_and_revision("dxf_diff_results_PairA_no_revision_suffix") is None
+    assert parse_group_and_revision("dxf_diff_results_TypeA_no_revision_suffix") is None
 
 
 def test_parse_sashiban_module_side():
-    assert parse_sashiban_module_side("dxf_diff_results_PairA_ME24-1001-0_ZC00_405_04") == (
+    assert parse_sashiban_module_side("dxf_diff_results_TypeA_ME24-1001-0_ZC00_405_04") == (
         "ME24-1001-0", "ZC00", "405",
     )
     assert parse_sashiban_module_side("dxf_diff_results_TypeB_ME24-1001-0_ZMF1_405_01") == (
@@ -68,22 +62,36 @@ def test_parse_sashiban_module_side_accepts_na_module_and_side():
 
 def test_parse_sashiban_module_side_returns_none_tuple_for_unrelated_names():
     assert parse_sashiban_module_side("some_other_folder") == (None, None, None)
-    assert parse_sashiban_module_side("dxf_diff_results_PairA_no_revision_suffix") == (None, None, None)
+    assert parse_sashiban_module_side("dxf_diff_results_TypeA_no_revision_suffix") == (None, None, None)
+
+
+def test_parse_diff_type():
+    """"Type"直後の1文字（A/B/C）を差分方式として取り出す。"""
+    assert parse_diff_type("dxf_diff_results_TypeA_ME24-1001-0_ZC00_405") == "A"
+    assert parse_diff_type("dxf_diff_results_TypeB_ME24-1001-0_ZMF1_405_01") == "B"
+    # モジュール/サイドが無いフォルダ名でも、Type直後の文字だけで判定できる
+    assert parse_diff_type("dxf_diff_results_TypeC_PE25-9601-0") == "C"
+
+
+def test_parse_diff_type_returns_none_for_unrelated_names():
+    assert parse_diff_type("some_other_folder") is None
+    assert parse_diff_type("dxf_diff_results_no_type_token_ME24-1001-0") is None
+    # "Pair" トークン（DXF-diff-manager が採用していない命名規則）は対象外
+    assert parse_diff_type("dxf_diff_results_PairA_ME24-1001-0_ZC00_405") is None
 
 
 def test_group_entries_picks_latest_recorded_date_when_folder_has_duplicate_ledgers():
     """同一フォルダ（同一package_name）に複数の有効な台帳がある場合、Diff List内の
-    最大Recorded Dateが最も新しいものだけを採用する
-    （2026-07-28に実データで確認: 図番抽出に失敗した古い実行結果と、成功した新しい
-    実行結果が同じフォルダに混在していたケース）。"""
+    最大Recorded Dateが最も新しいものだけを採用する（差分抽出のやり直しで古い実行
+    結果がフォルダに残っていた場合の取り違え防止）。"""
     older = LedgerEntry(
-        package_name="dxf_diff_results_PairA_ME00-0000-0_ZZ00_000_01",
+        package_name="dxf_diff_results_TypeA_ME00-0000-0_ZZ00_000_01",
         source_path="old.xlsx",
         diff_list_rows=[_row("C1", "P1", "RevUp", datetime(2026, 7, 7), 1, 1, 2, 1, 3)],
         summary_values={},
     )
     newer = LedgerEntry(
-        package_name="dxf_diff_results_PairA_ME00-0000-0_ZZ00_000_01",
+        package_name="dxf_diff_results_TypeA_ME00-0000-0_ZZ00_000_01",
         source_path="new.xlsx",
         diff_list_rows=[_row("C1", "P1", "RevUp", datetime(2026, 7, 9), 9, 9, 18, 9, 27)],
         summary_values={},

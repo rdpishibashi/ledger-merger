@@ -13,6 +13,11 @@ streamlit スキルの「状態に応じたボタンの色分け」パターン�
 （2026-07-29 claude-in-chrome で実施済み）に委ね、本テストは
 `st.session_state` を直接シードして「統合実行」ボタンの `type` 遷移ロジックのみを
 検証する。
+
+2026-08、`merge_done` の判定に `not zip_files` を追加（統合成功後にZIPアップローダーへ
+新しいファイルを追加すると、`type` が自動的に primary に戻る）。`st.file_uploader` の
+戻り値は `AppTest` でシードできないため、この追加条件（新しいZIPが選択されている場合の
+遷移）は本テストではなく実ブラウザでの確認に委ねる（`tests/regression/README.md` 参照）。
 """
 
 from streamlit.testing.v1 import AppTest

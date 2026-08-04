@@ -12,15 +12,33 @@ DIFF_LIST_HEADERS = (
     "Total Entities",
 )
 
+# DIFF_LIST_HEADERS 内の各列インデックス。台帳の生行（entry.diff_list_rows の要素）を
+# 読み出す全モジュール（group_summary_builder.py, ledger_merger.py,
+# master_ledger_builder.py）で共有する。
+CHILD_COL = DIFF_LIST_HEADERS.index("Child")
+PARENT_COL = DIFF_LIST_HEADERS.index("Parent")
+RELATION_COL = DIFF_LIST_HEADERS.index("Relation")
+TITLE_COL = DIFF_LIST_HEADERS.index("Title")
+SUBTITLE_COL = DIFF_LIST_HEADERS.index("Subtitle")
+RECORDED_DATE_COL = DIFF_LIST_HEADERS.index("Recorded Date")
+NOTE_COL = DIFF_LIST_HEADERS.index("Note")
+DELETED_COL = DIFF_LIST_HEADERS.index("Deleted Entities")
+ADDED_COL = DIFF_LIST_HEADERS.index("Added Entities")
+DIFF_COL = DIFF_LIST_HEADERS.index("Diff Entities")
+UNCHANGED_COL = DIFF_LIST_HEADERS.index("Unchanged Entities")
+TOTAL_COL = DIFF_LIST_HEADERS.index("Total Entities")
+
+ENTITY_LABELS = ("Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities", "Total Entities")
+
 SUMMARY_LABELS = (
     "削除図形数 合計", "追加図形数 合計", "差分図形数 合計", "変更なし図形数 合計",
     "総図形数 合計", "図形変更率 [%]", "入力図面総数", "差分抽出ペア数", "流用率 [%]",
 )
 
-# DXF-diff-manager が2026-08にSummaryシートへ追加した指標。SUMMARY_LABELS（台帳判定の
-# 必須条件）には含めない——必須にすると、この2指標を持たない旧バージョンの台帳が
-# すべて無効判定されてしまうため。存在すれば summary_values に取り込むだけの任意項目
-# とし、欠損時は呼び出し側で0として扱う。
+# DXF-diff-manager のバージョンによってはSummaryシートに含まれない指標。
+# SUMMARY_LABELS（台帳判定の必須条件）には含めない——必須にすると、この2指標を
+# 持たないDXF-diff-manager出力の台帳がすべて無効判定されてしまうため。存在すれば
+# summary_values に取り込むだけの任意項目とし、欠損時は呼び出し側で0として扱う。
 OPTIONAL_SUMMARY_LABELS = ("完全新規図面数", "新規作成率 [%]")
 
 # SUMMARY_LABELS（Ledger-merger 自身の統合Excel出力列名。README.md 記載の契約）に対する、
@@ -47,8 +65,6 @@ _SOURCE_LABEL_ALIASES = {
 
 # DXF-diff-manager が出力する台帳以外の固定ファイル名。台帳の候補から除外する。
 NON_LEDGER_FILENAMES = {"diff_labels.xlsx", "unchanged_labels.xlsx"}
-
-_TOTAL_ENTITIES_COL = DIFF_LIST_HEADERS.index("Total Entities")
 
 
 @dataclass
@@ -96,7 +112,7 @@ def _try_load_ledger(path):
         # Total Entities が空欄の行は、実際には差分抽出されていない図番ペアの
         # 関係記録（親子マスター管理用）であり、Summary シートの集計にも含まれない。
         # 統合 Diff List には実際に差分抽出された行のみを含める。
-        diff_list_rows = [row for row in rows[1:] if row[_TOTAL_ENTITIES_COL] is not None]
+        diff_list_rows = [row for row in rows[1:] if row[TOTAL_COL] is not None]
         if not diff_list_rows:
             return None
 

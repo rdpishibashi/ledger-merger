@@ -65,7 +65,7 @@ def test_bundle_contains_expected_files_with_fixed_names():
 
 
 def test_master_sheet_in_bundle_is_child_parent_deduped_diff_list_shape():
-    from utils.ledger_finder import DIFF_LIST_HEADERS
+    from utils.master_ledger_builder import MASTER_HEADERS
 
     entries, _missing = find_ledger_files(REAL_DATA_ROOT)
     bundle = _build_bundle(entries)
@@ -76,15 +76,18 @@ def test_master_sheet_in_bundle_is_child_parent_deduped_diff_list_shape():
     wb = openpyxl.load_workbook(io.BytesIO(master_bytes))
     assert wb.sheetnames == ["Master", "Work Master", "Summary"]
     ws = wb["Master"]
-    assert tuple(c.value for c in ws[1]) == DIFF_LIST_HEADERS
+    assert tuple(c.value for c in ws[1]) == MASTER_HEADERS
 
     child_parent_pairs = [(row[0], row[1]) for row in ws.iter_rows(min_row=2, values_only=True)]
     assert len(child_parent_pairs) == len(set(child_parent_pairs))  # 重複なし
     children = [pair[0] for pair in child_parent_pairs]
-    assert children == sorted(children)  # Child昇順
+    # フィクスチャは全エントリが差分方式"A"で統一のため、並び順はChild昇順と一致する
+    # （実際のソートキーは Diff Type→Child。差分方式混在時のソートは
+    # test_master_summary_diff_type_columns.py で別途検証）
+    assert children == sorted(children)
 
 
-def test_work_master_sheet_in_bundle_is_sashiban_child_parent_deduped():
+def test_work_master_sheet_in_bundle_is_sashiban_module_side_child_parent_deduped():
     from utils.master_ledger_builder import WORK_MASTER_HEADERS
 
     entries, _missing = find_ledger_files(REAL_DATA_ROOT)
@@ -97,10 +100,10 @@ def test_work_master_sheet_in_bundle_is_sashiban_child_parent_deduped():
     ws = wb["Work Master"]
     assert tuple(c.value for c in ws[1]) == WORK_MASTER_HEADERS
 
-    keys = [(row[0], row[1], row[2]) for row in ws.iter_rows(min_row=2, values_only=True)]
-    assert len(keys) == len(set(keys))  # 重複なし（指番,Child,Parent）
-    assert keys == sorted(keys)  # 指番→Child昇順
-    assert all(sashiban is not None for sashiban, _child, _parent in keys)  # 指番不明エントリは除外済み
+    keys = [(row[0], row[1], row[2], row[3], row[4]) for row in ws.iter_rows(min_row=2, values_only=True)]
+    assert len(keys) == len(set(keys))  # 重複なし（指番,モジュール,サイド,Child,Parent）
+    assert keys == sorted(keys)  # 指番→モジュール→サイド→Child昇順
+    assert all(sashiban is not None for sashiban, _m, _s, _child, _parent in keys)  # 指番不明エントリは除外済み
 
 
 def test_summary_sheet_in_bundle_has_one_row_per_sashiban_for_first_run():

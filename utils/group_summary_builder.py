@@ -4,9 +4,6 @@
 
 DXF-diff-manager のZIPダウンロードファイル名の命名規則
 （dxf_diff_results_Type{A/B/C}_{指番}_{モジュール}_{サイド}_{リビジョン}）に依存する。
-2026-07-28以前に手動で "dxf_diff_results_Pair{A/B/C}_..." と命名されたフォルダ
-（DXF-diff-manager がファイル名自動生成に対応する前の実データ）も引き続き解釈できる
-よう、"Pair"/"Type" どちらのトークンも受け付ける。
 """
 
 import io
@@ -18,22 +15,26 @@ from datetime import datetime
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font
 
-from utils.ledger_finder import DIFF_LIST_HEADERS
+from utils.ledger_finder import CHILD_COL, DIFF_LIST_HEADERS, ENTITY_LABELS, RECORDED_DATE_COL
 
 CENTER_ALIGNMENT = Alignment(horizontal="center")
 _ENTITY_NUMBER_FORMAT = "#,##0"
 
-GROUP_REVISION_PATTERN = re.compile(r'^dxf_diff_results_(?:Pair|Type)[A-Za-z]_(?P<group>.+)_(?P<revision>\d+)$')
+GROUP_REVISION_PATTERN = re.compile(r'^dxf_diff_results_Type[A-Za-z]_(?P<group>.+)_(?P<revision>\d+)$')
+
+# 差分方式（Type A/B/C）を取り出すためのパターン。指番/モジュール/サイドと異なり
+# 台帳ファイル名には含まれないため、フォルダ名のみから判定する。
+DIFF_TYPE_PATTERN = re.compile(r'^dxf_diff_results_Type(?P<type>[A-Za-z])_')
 
 # 指番・モジュール・サイドを個別に取り出すための厳密なパターン。DXF-diff-manager
 # 自身の指番/モジュール/サイド入力フォーマット（app.py の SHIBAN_PATTERN /
 # MODULE_PATTERN / SIDE_PATTERN、および両者を結合する MASTER_FILENAME_PATTERN）と
 # 同一の正規表現を用いる。GROUP_REVISION_PATTERN は group を1文字列として緩く
 # 取り出すのに対し、こちらは指番/モジュール/サイドそれぞれの妥当な書式を検証する。
-# 末尾のリビジョン番号は2026-08以降DXF-diff-manager側のZIPファイル名から省略される
-# ようになったため任意とする（例: dxf_diff_results_TypeA_ME24-1001-0_ZC00_405）。
+# 末尾のリビジョン番号はDXF-diff-manager側のZIPファイル名から省略される場合が
+# あるため任意とする（例: dxf_diff_results_TypeA_ME24-1001-0_ZC00_405）。
 SASHIBAN_MODULE_SIDE_PATTERN = re.compile(
-    r'^dxf_diff_results_(?:Pair|Type)[A-Za-z]_'
+    r'^dxf_diff_results_Type[A-Za-z]_'
     r'(?P<shiban>[A-Z]{2}\d{2}-\d{4}-\d)_(?P<module>[A-Z0-9]{4}|na)_(?P<side>[A-Z0-9]{3}|na)'
     r'(?:_(?P<revision>\d+))?$'
 )
@@ -42,23 +43,19 @@ SASHIBAN_MODULE_SIDE_PATTERN = re.compile(
 # （model.master_ledger.MASTER_FILENAME_PATTERN）と同一の正規表現。指番/モジュール/
 # サイドの抽出は、この「ファイル名」を主として使う。フォルダ名（Diff Package名）は
 # ZIPダウンロード時にユーザーが自由に編集できるテキスト欄に由来し、モジュール/サイドが
-# 欠落しうる（2026-08、実データで確認: フォルダ名 "dxf_diff_results_TypeA_PE25-9601-0"
-# にはモジュール/サイドが無いが、ファイル名 "PE25-9601-0_ZM00_405.xlsx" は正しく
-# 持っていた）のに対し、台帳ファイル名は常にこの規則で作られるため信頼できる。
+# 欠落しうる（例: フォルダ名 "dxf_diff_results_TypeA_PE25-9601-0" にはモジュール/
+# サイドが無いが、ファイル名 "PE25-9601-0_ZM00_405.xlsx" は正しく持っている）のに対し、
+# 台帳ファイル名は常にこの規則で作られるため信頼できる。
 LEDGER_FILENAME_PATTERN = re.compile(
     r'^(?P<shiban>[A-Z]{2}\d{2}-\d{4}-\d)_(?P<module>[A-Z0-9]{4}|na)_(?P<side>[A-Z0-9]{3}|na)'
     r'(?:[_-].*)?\.xlsx$'
 )
 
-_CHILD_COL = DIFF_LIST_HEADERS.index("Child")
-_RECORDED_DATE_COL = DIFF_LIST_HEADERS.index("Recorded Date")
-_ENTITY_COLS = ("Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities", "Total Entities")
-
 # Summaryシートの行構成（セクション見出し, 項目ラベル）。項目ラベルは DXF-diff-manager
 # 自身のSummaryシートの表記（Type A: all_in_one）をそのまま使う。Type B/C
 # （流用先図面総数/流用先図面 図形総数）の文言には対応しない（既知の制約）。
-# 「完全新規図面数」「新規作成率 [%]」は2026-08追加（DXF-diff-manager Summaryシートの
-# 対応する2指標と同じ相対位置：差分抽出ペア数の直下・流用率[%]の直下）。
+# 「完全新規図面数」「新規作成率 [%]」は DXF-diff-manager Summaryシートの対応する
+# 2指標と同じ相対位置（差分抽出ペア数の直下・流用率[%]の直下）。
 SUMMARY_ROWS = (
     ("エンティティ統計", "削除図形 総数"),
     (None, "追加図形 総数"),
@@ -103,7 +100,7 @@ def parse_sashiban_module_side(package_name, filename=None):
     台帳ファイル名（filename。"{指番}_{モジュール}_{サイド}[_-suffix].xlsx"、
     LEDGER_FILENAME_PATTERN）を主として使う。フォルダ名（package_name。ZIP
     ダウンロード時にユーザーが自由編集できるテキスト欄に由来し、モジュール/サイドが
-    欠落しうる）より信頼できるため（2026-08 ユーザー指摘）。
+    欠落しうる）より信頼できるため。
 
     filename が未指定、またはこの規則に一致しない場合のみ、フォルダ名の厳密パターン
     （SASHIBAN_MODULE_SIDE_PATTERN）へフォールバックする。どちらにも一致しない場合は
@@ -120,6 +117,16 @@ def parse_sashiban_module_side(package_name, filename=None):
     return match['shiban'], match['module'], match['side']
 
 
+def parse_diff_type(package_name):
+    """Diff Package（DXF-diff-manager 出力フォルダ名）から差分方式（Type A/B/C）を
+    取り出す。指番/モジュール/サイドと異なり台帳ファイル名には含まれないため、
+    フォルダ名のみから判定する。一致しない場合は None を返す（Work Master/Summary
+    の Diff Type / 差分方式列が空欄になる）。
+    """
+    match = DIFF_TYPE_PATTERN.match(package_name)
+    return match['type'] if match else None
+
+
 def parse_group_and_revision(package_name, filename=None):
     """グループキー（指番_モジュール_サイド）とレビジョン番号（省略時は None）を
     取り出す。一致しない場合は None を返す（この機能の対象外として扱う）。
@@ -128,9 +135,9 @@ def parse_group_and_revision(package_name, filename=None):
     （ファイル名を主、フォルダ名の厳密パターンを従）で決定する。レビジョン番号は
     フォルダ名（DXF-diff-managerのZIPダウンロードファイル名の命名規則
     dxf_diff_results_Type{A/B/C}_{指番}_{モジュール}_{サイド}_{リビジョン}、または
-    リビジョン省略形〈2026-08以降〉）からのみ取得する——台帳ファイル名の末尾サフィックス
-    はリビジョン以外の自由文字列でありうる（LEDGER_FILENAME_PATTERN の "_-suffix"
-    部分）ため、レビジョンとして解釈しない（2026-08 ユーザー指摘）。
+    リビジョン省略形）からのみ取得する——台帳ファイル名の末尾サフィックスはリビジョン
+    以外の自由文字列でありうる（LEDGER_FILENAME_PATTERN の "_-suffix" 部分）ため、
+    レビジョンとして解釈しない。
 
     指番/モジュール/サイドがどちらの規則にも一致しない場合のみ、フォルダ名の緩い
     パターン（GROUP_REVISION_PATTERN。groupを1文字列として緩く取り出す）へ
@@ -160,10 +167,9 @@ def find_entries_with_unresolved_sashiban(entries):
 
     これらのエントリは Work Master・Summary・指番_モジュール_サイド別集計から
     黙って除外される（図形変更量詳細.xlsx には Sashiban/Module/Side が空欄のまま
-    引き続き含まれる）。台帳ファイル名が命名規則からずれている場合（2026-08
-    ユーザー報告の実例: "NE24-0062-0_ZM00_405l.xlsx" — 末尾に区切り文字
-    "_"/"-" の無い "l" が付いておりミスタイプだった）を検出し、ユーザーに知らせる
-    ための一覧。
+    引き続き含まれる）。台帳ファイル名が命名規則からずれている場合（例:
+    "NE24-0062-0_ZM00_405l.xlsx" — 末尾に区切り文字 "_"/"-" の無い "l" が付いた
+    ミスタイプ）を検出し、ユーザーに知らせるための一覧。
     """
     return [
         entry for entry in entries
@@ -172,7 +178,7 @@ def find_entries_with_unresolved_sashiban(entries):
 
 
 def _max_recorded_date(entry):
-    dates = [row[_RECORDED_DATE_COL] for row in entry.diff_list_rows if row[_RECORDED_DATE_COL] is not None]
+    dates = [row[RECORDED_DATE_COL] for row in entry.diff_list_rows if row[RECORDED_DATE_COL] is not None]
     return max(dates) if dates else datetime.min
 
 
@@ -181,17 +187,15 @@ def group_entries(entries):
 
     同一フォルダ（同一 package_name）に複数の有効な台帳が見つかった場合は、Diff List
     内の最大 Recorded Date が最も新しいものだけを採用する（差分抽出のやり直しで古い
-    実行結果がフォルダに残っていた場合の取り違え防止。2026-07-28 の実データで実際に
-    確認したケース: 図番抽出に失敗した古い実行結果と、成功した新しい実行結果が
-    同じフォルダに混在していた）。**この「同一フォルダ内の複数候補から1つを選ぶ」
-    処理は、指番/モジュール/サイドの算出（ファイル名を主とする parse_group_and_revision
-    参照）より先に行う** — 同じフォルダ内の候補ファイルは、たとえファイル名の命名が
-    異なっていても（例: 失敗した古い実行結果の "..._na_na.xlsx" と、成功した新しい
-    実行結果の "..._ZC00_405.xlsx"）同一の実行対象として競合させ、勝者を決めてから
-    その勝者のファイル名で指番/モジュール/サイドを決定する（2026-08、フォルダ名を
-    ファイル名優先に変更した際、先に指番/モジュール/サイドで競合グループを分けて
-    しまうと、この「同一フォルダ内の取り違え防止」が機能しなくなる回帰を作ったため
-    修正）。
+    実行結果がフォルダに残っていた場合の取り違え防止）。**この「同一フォルダ内の
+    複数候補から1つを選ぶ」処理は、指番/モジュール/サイドの算出（ファイル名を主とする
+    parse_group_and_revision 参照）より先に行うこと** — 同じフォルダ内の候補ファイルは、
+    たとえファイル名の命名が異なっていても（例: 失敗した古い実行結果の
+    "..._na_na.xlsx" と、成功した新しい実行結果の "..._ZC00_405.xlsx"）同一の実行対象
+    として競合させ、勝者を決めてからその勝者のファイル名で指番/モジュール/サイドを
+    決定する必要がある。先に指番/モジュール/サイドで競合グループを分けてしまうと、
+    この「同一フォルダ内の取り違え防止」が機能しなくなる
+    （`tests/regression/bugfix/test_sashiban_filename_fallback.py` 参照）。
 
     Returns:
         dict[group_key, list[(revision, LedgerEntry)]]（レビジョン文字列の昇順。
@@ -231,15 +235,15 @@ def aggregate_diff_list_by_child(revision_entries):
     rows_by_child = defaultdict(list)
     for _revision, entry in revision_entries:
         for row in entry.diff_list_rows:
-            rows_by_child[row[_CHILD_COL]].append(row)
+            rows_by_child[row[CHILD_COL]].append(row)
 
     aggregated = []
     for child in sorted(rows_by_child.keys()):
         rows = rows_by_child[child]
-        latest_row = max(rows, key=lambda r: r[_RECORDED_DATE_COL] or datetime.min)
+        latest_row = max(rows, key=lambda r: r[RECORDED_DATE_COL] or datetime.min)
 
         out_row = list(latest_row)
-        for col_name in _ENTITY_COLS:
+        for col_name in ENTITY_LABELS:
             col_idx = DIFF_LIST_HEADERS.index(col_name)
             numeric_values = [r[col_idx] for r in rows if isinstance(r[col_idx], (int, float))]
             out_row[col_idx] = sum(numeric_values) if numeric_values else 'n/a'
@@ -273,31 +277,33 @@ def _total_value(revision_entries, display_label):
     return sum(_revision_value(entry, display_label) for _revision, entry in revision_entries)
 
 
-def aggregate_input_drawing_totals_by_sashiban(entries):
+def aggregate_input_drawing_totals_by_sashiban_and_diff_type(entries):
     """entries（今回のZIP入力から得たLedgerEntryのリスト）を指番_モジュール_サイド
     単位でグルーピングし、各グループの「アップロード図面総数」TOTAL値
     （指番_モジュール_サイド別集計フォルダの "{group_key}_all.xlsx" Summaryシートの
     「アップロード図面総数」行・TOTAL列と同値。"アップロード図面総数" はカウント系
     ラベルのため _total_value() の実体は単純合計だが、ここでは非数値・欠損値
     （summary_values にキーが無い場合等）を安全に0として扱うため独自に集計する）を、
-    指番（xx00-0000-0部分）ごとに合算する。命名規則に一致しないグループは対象外。
+    (指番, 差分方式) ごとに合算する（差分方式が同一指番内で異なる場合は別グループ
+    として分ける）。命名規則に一致しないグループは対象外。
 
     Returns:
-        dict[sashiban, int|float]
+        dict[(sashiban, diff_type), int|float]
     """
     groups = group_entries(entries)
-    totals_by_sashiban = defaultdict(int)
+    totals = defaultdict(int)
     for group_key, revision_entries in groups.items():
         representative_entry = revision_entries[0][1]
         sashiban, _module, _side = parse_sashiban_module_side(
             representative_entry.package_name, representative_entry.source_path)
         if sashiban is None:
             continue
+        diff_type = parse_diff_type(representative_entry.package_name)
         for _revision, entry in revision_entries:
             value = entry.summary_values.get(_CANONICAL_BY_DISPLAY_LABEL["アップロード図面総数"])
             if isinstance(value, (int, float)):
-                totals_by_sashiban[sashiban] += value
-    return dict(totals_by_sashiban)
+                totals[(sashiban, diff_type)] += value
+    return dict(totals)
 
 
 def build_group_workbook(group_key, revision_entries):
@@ -349,7 +355,7 @@ def build_group_workbook(group_key, revision_entries):
     diff_ws.freeze_panes = "A2"
 
     recorded_date_col = DIFF_LIST_HEADERS.index("Recorded Date") + 1
-    entity_cols = [DIFF_LIST_HEADERS.index(label) + 1 for label in _ENTITY_COLS]
+    entity_cols = [DIFF_LIST_HEADERS.index(label) + 1 for label in ENTITY_LABELS]
     for row in aggregate_diff_list_by_child(revision_entries):
         diff_ws.append(row)
         row_idx = diff_ws.max_row

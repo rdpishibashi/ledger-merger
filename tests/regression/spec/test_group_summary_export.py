@@ -15,7 +15,7 @@ ME24-1001-0_ZC00_405_all.xlsx との突き合わせで確認）:
 
 このテストは、ユーザー提供の実際の参照ファイル（ME24-1001-0_ZC00_405_all.xlsx、
 2026-07-28受領）のSummaryシートの値と完全一致することを検証する
-（tests/fixtures/dxf_diff_manager_output/dxf_diff_results_PairA_ME24-1001-0_ZC00_405_01〜04
+（tests/fixtures/dxf_diff_manager_output/dxf_diff_results_TypeA_ME24-1001-0_ZC00_405_01〜04
 が、その参照ファイルの生成元となった実データそのもの）。
 
 2026-08、DXF-diff-manager Summaryシートに追加された「完全新規図面数」「新規作成率 [%]」
