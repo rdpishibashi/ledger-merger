@@ -270,6 +270,78 @@ def test_merged_workbook_structure():
     assert row_idx - 2 == sum(len(e.diff_list_rows) for e in entries)
 
 
+def _diff_row(child, parent):
+    return (child, parent, "RevUp", "T", "S", None, None, 1, 2, 3, 4, 10)
+
+
+_MERGED_SUMMARY_VALUES = {
+    "削除図形数 合計": 1, "追加図形数 合計": 2, "差分図形数 合計": 3,
+    "総図形数 合計": 10, "図形変更率 [%]": 0.3,
+}
+
+
+def test_merged_workbook_rows_sorted_by_sashiban_diff_package_module_side_child():
+    """行は Sashiban → Diff Package → Module → Side → Child の昇順に並ぶ
+    （2026-08、ユーザー要望）。ブロック内で最初に現れる行（＝ソート後にChildが
+    最小の行）に集計値・Diff Package列の黒字フォントが付くことも確認する。"""
+    entry_zz_c3_c1 = LedgerEntry(
+        package_name="dxf_diff_results_TypeA_ZZ99-0001-0_ZM00_405", source_path="a.xlsx",
+        diff_list_rows=[_diff_row("C3", "P3"), _diff_row("C1", "P1")],
+        summary_values=_MERGED_SUMMARY_VALUES,
+    )
+    entry_aa_c2_c1 = LedgerEntry(
+        package_name="dxf_diff_results_TypeA_AA10-0001-0_ZM00_405", source_path="b.xlsx",
+        diff_list_rows=[_diff_row("C2", "P2"), _diff_row("C1", "P1")],
+        summary_values=_MERGED_SUMMARY_VALUES,
+    )
+
+    merged_bytes = build_merged_workbook([entry_zz_c3_c1, entry_aa_c2_c1])
+    wb = openpyxl.load_workbook(__import__("io").BytesIO(merged_bytes))
+    ws = wb["Diff List"]
+
+    child_col = OUTPUT_HEADERS.index("Child") + 1
+    sashiban_col = OUTPUT_HEADERS.index("Sashiban") + 1
+    rows = list(ws.iter_rows(min_row=2, values_only=True))
+    assert [(r[sashiban_col - 1], r[child_col - 1]) for r in rows] == [
+        ("AA10-0001-0", "C1"), ("AA10-0001-0", "C2"),
+        ("ZZ99-0001-0", "C1"), ("ZZ99-0001-0", "C3"),
+    ]
+
+    # 各ブロックの先頭行（Child最小）のみ集計値あり・Diff Package列が黒字
+    summary_col = OUTPUT_HEADERS.index("削除図形数 合計") + 1
+    for row_idx, expected_first in zip(range(2, ws.max_row + 1), [True, False, True, False]):
+        summary_cell_value = ws.cell(row=row_idx, column=summary_col).value
+        package_font = ws.cell(row=row_idx, column=OUTPUT_HEADERS.index("Diff Package") + 1).font.color.rgb
+        if expected_first:
+            assert summary_cell_value == 1
+            assert package_font == "FF000000"
+        else:
+            assert summary_cell_value is None
+            assert package_font == "FFA6A6A6"
+
+
+def test_merged_workbook_unresolvable_sashiban_sorts_last():
+    """Sashiban/Module/Side を逆算できないエントリ（命名規則に一致しない）は、
+    ソート時に空欄扱いのため他の解決済みエントリより後ろに並ぶ。"""
+    entry_resolved = LedgerEntry(
+        package_name="dxf_diff_results_TypeA_AA10-0001-0_ZM00_405", source_path="a.xlsx",
+        diff_list_rows=[_diff_row("C1", "P1")],
+        summary_values=_MERGED_SUMMARY_VALUES,
+    )
+    entry_unresolved = LedgerEntry(
+        package_name="some_manually_named_folder", source_path="b.xlsx",
+        diff_list_rows=[_diff_row("C1", "P1")],
+        summary_values=_MERGED_SUMMARY_VALUES,
+    )
+
+    merged_bytes = build_merged_workbook([entry_unresolved, entry_resolved])
+    wb = openpyxl.load_workbook(__import__("io").BytesIO(merged_bytes))
+    ws = wb["Diff List"]
+
+    sashiban_values = [row[0] for row in ws.iter_rows(min_row=2, values_only=True)]
+    assert sashiban_values == ["AA10-0001-0", None]
+
+
 def test_entity_and_summary_columns_are_formatted_and_centered():
     """"* Entities" 列・Summary由来5項目（"* 合計" 等）列はカンマ区切り（％項目は
     0.00%）＋中央揃いで表示する。'n/a' と数値の位置がずれないようにするため。

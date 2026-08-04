@@ -44,10 +44,26 @@ RECORDED_DATE_COL = OUTPUT_HEADERS.index("Recorded Date") + 1
 ENTITY_COLS = [OUTPUT_HEADERS.index(label) + 1 for label in ENTITY_LABELS]
 DIFF_PACKAGE_COL = OUTPUT_HEADERS.index("Diff Package") + 1
 _SUMMARY_COLS = [OUTPUT_HEADERS.index(label) + 1 for label in _MERGED_SUMMARY_DISPLAY_LABELS]
+_CHILD_COL = DIFF_LIST_HEADERS.index("Child")
+
+
+def _sort_part(value):
+    """None を安全に最後尾へ回すためのソートキー要素（Noneどうし・文字列どうしの
+    比較のみになり、None と str の比較で TypeError が出ないようにする）。"""
+    return (value is None, value or "")
 
 
 def build_merged_workbook(entries):
-    """LedgerEntry のリストから統合済み Excel を生成し bytes で返す。"""
+    """LedgerEntry のリストから統合済み Excel を生成し bytes で返す。行は
+    Sashiban → Diff Package → Module → Side → Child の昇順にソートする
+    （2026-08、ユーザー要望）。Sashiban/Module/Side を逆算できないエントリ
+    （`parse_sashiban_module_side()` が None を返す場合）は末尾に回る。
+
+    各 LedgerEntry の行はソート後も (Sashiban, Diff Package, Module, Side) が
+    同一のため連続してまとまる。「ブロック内最初の行のみ集計値・Diff Package列を
+    黒字にする」という既存の表示規則は、ソート後にその LedgerEntry の行として
+    最初に現れる行（＝ソート後にChildが最小の行）に適用される。
+    """
     wb = Workbook()
     ws = wb.active
     ws.title = "Diff List"
@@ -58,36 +74,49 @@ def build_merged_workbook(entries):
         cell.alignment = CENTER_ALIGNMENT
     ws.freeze_panes = "A2"
 
-    row_idx = 2
+    flat_rows = []
     for entry in entries:
         sashiban, module, side = parse_sashiban_module_side(entry.package_name, entry.source_path)
-        for row_in_block, diff_row in enumerate(entry.diff_list_rows):
-            row = [sashiban, module, side, *diff_row]
-            if row_in_block == 0:
-                row += [entry.summary_values[canonical] for canonical in _MERGED_SUMMARY_CANONICAL_KEYS]
-            else:
-                row += [None] * len(_MERGED_SUMMARY_CANONICAL_KEYS)
-            row.append(entry.package_name)
-            ws.append(row)
+        for diff_row in entry.diff_list_rows:
+            sort_key = (
+                _sort_part(sashiban), entry.package_name,
+                _sort_part(module), _sort_part(side), diff_row[_CHILD_COL],
+            )
+            flat_rows.append((sort_key, entry, sashiban, module, side, diff_row))
+    flat_rows.sort(key=lambda item: item[0])
 
-            package_cell = ws.cell(row=row_idx, column=DIFF_PACKAGE_COL)
-            package_cell.font = FIRST_ROW_FONT if row_in_block == 0 else OTHER_ROW_FONT
+    row_idx = 2
+    seen_entry_ids = set()
+    for _sort_key, entry, sashiban, module, side, diff_row in flat_rows:
+        is_first_in_block = id(entry) not in seen_entry_ids
+        seen_entry_ids.add(id(entry))
 
-            ws.cell(row=row_idx, column=RECORDED_DATE_COL).number_format = "YYYY-MM-DD HH:MM:SS"
+        row = [sashiban, module, side, *diff_row]
+        if is_first_in_block:
+            row += [entry.summary_values[canonical] for canonical in _MERGED_SUMMARY_CANONICAL_KEYS]
+        else:
+            row += [None] * len(_MERGED_SUMMARY_CANONICAL_KEYS)
+        row.append(entry.package_name)
+        ws.append(row)
 
-            # "* Entities" 列（数値/'n/a' 混在）はカンマ区切り＋中央揃いで表示位置を揃える
-            for col in ENTITY_COLS:
+        package_cell = ws.cell(row=row_idx, column=DIFF_PACKAGE_COL)
+        package_cell.font = FIRST_ROW_FONT if is_first_in_block else OTHER_ROW_FONT
+
+        ws.cell(row=row_idx, column=RECORDED_DATE_COL).number_format = "YYYY-MM-DD HH:MM:SS"
+
+        # "* Entities" 列（数値/'n/a' 混在）はカンマ区切り＋中央揃いで表示位置を揃える
+        for col in ENTITY_COLS:
+            cell = ws.cell(row=row_idx, column=col)
+            cell.number_format = "#,##0"
+            cell.alignment = CENTER_ALIGNMENT
+
+        if is_first_in_block:
+            for col, label in zip(_SUMMARY_COLS, _MERGED_SUMMARY_DISPLAY_LABELS):
                 cell = ws.cell(row=row_idx, column=col)
-                cell.number_format = "#,##0"
+                cell.number_format = "0.00%" if label in PERCENT_LABELS else "#,##0"
                 cell.alignment = CENTER_ALIGNMENT
 
-            if row_in_block == 0:
-                for col, label in zip(_SUMMARY_COLS, _MERGED_SUMMARY_DISPLAY_LABELS):
-                    cell = ws.cell(row=row_idx, column=col)
-                    cell.number_format = "0.00%" if label in PERCENT_LABELS else "#,##0"
-                    cell.alignment = CENTER_ALIGNMENT
-
-            row_idx += 1
+        row_idx += 1
 
     for col_idx, header in enumerate(OUTPUT_HEADERS, start=1):
         width = max(len(str(header)) + 2, 12)
