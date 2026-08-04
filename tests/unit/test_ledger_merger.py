@@ -235,7 +235,7 @@ def test_merged_workbook_structure():
 
     header = tuple(c.value for c in ws[1])
     assert header == OUTPUT_HEADERS
-    assert len(header) == 21
+    assert len(header) == 22
     assert header[:3] == ("Sashiban", "Module", "Side")
     assert header[-1] == "Diff Package"
     # 図面統計系（入力図面総数・差分抽出ペア数・流用率 [%]・変更なし図形数 合計）は
@@ -248,13 +248,16 @@ def test_merged_workbook_structure():
     assert "変更図形数 合計" in header
     assert "図形総数 合計" in header
 
+    summary_start = OUTPUT_HEADERS.index("削除図形数 合計")
+    summary_end = OUTPUT_HEADERS.index("図形変更率 [%]") + 1
+
     row_idx = 2
     for entry in entries:
         sashiban, module, side = parse_sashiban_module_side(entry.package_name, entry.source_path)
         for row_in_block in range(len(entry.diff_list_rows)):
             row = ws[row_idx]
             package_cell = row[-1]
-            summary_cells = row[15:-1]
+            summary_cells = row[summary_start:summary_end]
 
             if row_in_block == 0:
                 assert package_cell.font.color.rgb == "FF000000"
@@ -374,3 +377,53 @@ def test_entity_and_summary_columns_are_formatted_and_centered():
                     assert cell.alignment.horizontal == "center"
 
             row_idx += 1
+
+
+def test_merged_workbook_row_has_diff_type_and_moved_note_recorded_date():
+    """列順は Sashiban, Module, Side, Child, Parent, Relation, Title, Subtitle,
+    Diff Type, Deleted/Added/Diff/Unchanged/Total Entities, 削除/追加/変更図形数
+    合計・図形総数 合計・図形変更率 [%]、Note, Recorded Date, Diff Package
+    （2026-08、ユーザー要望。Master/Work Masterと同じ並び替えパターン）。Diff Type
+    はDiff Package（"dxf_diff_results_PairA_..."）の"A"が入る。"""
+    from datetime import datetime
+
+    entry = LedgerEntry(
+        package_name="dxf_diff_results_PairA_AA10-0001-0_ZM00_405", source_path="a.xlsx",
+        diff_list_rows=[
+            ("C1", "P1", "RevUp", "T", "S", datetime(2026, 8, 6), "メモ", 1, 2, 3, 4, 10),
+        ],
+        summary_values=_MERGED_SUMMARY_VALUES,
+    )
+
+    merged_bytes = build_merged_workbook([entry])
+    wb = openpyxl.load_workbook(__import__("io").BytesIO(merged_bytes))
+    ws = wb["Diff List"]
+
+    row = next(ws.iter_rows(min_row=2, values_only=True))
+    assert dict(zip(OUTPUT_HEADERS, row)) == {
+        "Sashiban": "AA10-0001-0", "Module": "ZM00", "Side": "405",
+        "Child": "C1", "Parent": "P1", "Relation": "RevUp", "Title": "T", "Subtitle": "S",
+        "Diff Type": "A",
+        "Deleted Entities": 1, "Added Entities": 2, "Diff Entities": 3, "Unchanged Entities": 4,
+        "Total Entities": 10,
+        "削除図形数 合計": 1, "追加図形数 合計": 2, "変更図形数 合計": 3,
+        "図形総数 合計": 10, "図形変更率 [%]": 0.3,
+        "Note": "メモ", "Recorded Date": datetime(2026, 8, 6),
+        "Diff Package": "dxf_diff_results_PairA_AA10-0001-0_ZM00_405",
+    }
+
+
+def test_merged_workbook_diff_type_cell_is_centered():
+    from utils.ledger_merger import DIFF_TYPE_COL
+
+    entry = LedgerEntry(
+        package_name="dxf_diff_results_TypeA_AA10-0001-0_ZM00_405", source_path="a.xlsx",
+        diff_list_rows=[_diff_row("C1", "P1")],
+        summary_values=_MERGED_SUMMARY_VALUES,
+    )
+
+    merged_bytes = build_merged_workbook([entry])
+    wb = openpyxl.load_workbook(__import__("io").BytesIO(merged_bytes))
+    ws = wb["Diff List"]
+
+    assert ws.cell(row=2, column=DIFF_TYPE_COL).alignment.horizontal == "center"
