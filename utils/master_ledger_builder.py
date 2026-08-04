@@ -352,6 +352,9 @@ def _write_ledger_sheet(ws, headers, combined_rows, sort_key, recorded_date_col_
 
     recorded_date_col = recorded_date_col_idx + 1
     entity_cols = [headers.index(label) + 1 for label in _ENTITY_LABELS]
+    # Diff Type は Master・Work Master 共通の列（2026-08追加）。中央揃いにする
+    # （ユーザー要望）。
+    diff_type_col = headers.index("Diff Type") + 1 if "Diff Type" in headers else None
 
     for key in sorted(combined_rows.keys(), key=sort_key):
         ws.append(combined_rows[key])
@@ -361,6 +364,8 @@ def _write_ledger_sheet(ws, headers, combined_rows, sort_key, recorded_date_col_
             cell = ws.cell(row=row_idx, column=col)
             cell.number_format = "#,##0"
             cell.alignment = CENTER_ALIGNMENT
+        if diff_type_col is not None:
+            ws.cell(row=row_idx, column=diff_type_col).alignment = CENTER_ALIGNMENT
 
     for col_idx, header in enumerate(headers, start=1):
         width = max(len(str(header)) + 2, 12)
@@ -437,15 +442,19 @@ def build_master_workbook(
     wb = Workbook()
     ws = wb.active
     ws.title = MASTER_SHEET_NAME
-    # 並び順は Diff Type → Child（2026-08、ユーザー要望により Diff Type をソート
-    # キーに追加。Diff Type はキー〈child, parent〉ではなく行の値側にあるため、
-    # combined_master から都度引いて判定する。None〈逆算不可〉は末尾に回す）。
+    # 並び順は Child → Diff Type（2026-08、ユーザー要望により Diff Type を
+    # ソートキーに追加。Child が全体を通じて昇順になることを優先し、Diff Type は
+    # 同一Childが複数のDiff Typeに跨る場合のタイブレークとして使う（Diff Typeを
+    # 優先すると、Diff Type混在時にChild列が全体としては昇順に見えなくなるため、
+    # 2026-08、ユーザー指摘により優先順位を逆転）。Diff Type はキー〈child, parent〉
+    # ではなく行の値側にあるため、combined_master から都度引いて判定する。
+    # None〈逆算不可〉は同一Child内で末尾に回す。
     _write_ledger_sheet(
         ws, MASTER_HEADERS, combined_master,
         sort_key=lambda k: (
+            k[0],
             combined_master[k][_MASTER_DIFF_TYPE_COL] is None,
             combined_master[k][_MASTER_DIFF_TYPE_COL] or "",
-            k[0],
         ),
         recorded_date_col_idx=_MASTER_RECORDED_DATE_COL,
     )

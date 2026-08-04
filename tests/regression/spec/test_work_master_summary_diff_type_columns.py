@@ -13,7 +13,11 @@
         - "Note" を "Total Entities" の後ろへ移動。
         - "Recorded Date" を最後尾へ移動。
         - "Diff Type" を "Deleted Entities" の直前に追加。
-        - ソート順に "Diff Type" を追加（Diff Type → Child の順）。
+        - ソート順に "Diff Type" を追加（Child → Diff Type の順。Child が全体を
+          通じて昇順になることを優先し、Diff Type は同一Childのタイブレークに
+          使う。2026-08、当初は逆順〈Diff Type優先〉だったが、ユーザーから
+          「Childでソートされていない」と指摘され優先順位を修正）。
+        - "Diff Type" フィールドを中央揃いにする（Work Masterも同様）。
     "Diff Type"/"差分方式" は Diff Package（出力フォルダ名。
     "dxf_diff_results_Type{A|B|C}_{指番}(_{モジュール}_{サイド}_*)"）の
     "Type"/"Pair" 直後の1文字から逆算する。
@@ -171,9 +175,13 @@ def test_master_diff_type_resolved_even_when_sashiban_unresolvable():
     assert dict(zip(MASTER_HEADERS, row))["Diff Type"] == "A"
 
 
-def test_master_sheet_sorted_by_diff_type_then_child():
-    """Masterのソート順にDiff Typeが加わり、差分方式ごとにまとまってからChild昇順
-    になる（2026-08、ユーザー要望）。差分方式を逆算できないエントリは末尾に回る。"""
+def test_master_sheet_sorted_by_child_then_diff_type():
+    """Masterのソート順は Child が最優先（全体を通じてChild昇順になる）で、
+    Diff Type は同一Childが複数の差分方式に跨る場合のタイブレークとしてのみ働く
+    （2026-08、ユーザー確認済み仕様。当初は Diff Type を優先していたが、それだと
+    Diff Type混在時にChild列が全体としては昇順に見えなくなるとユーザーから指摘され、
+    優先順位を逆転した）。差分方式を逆算できないエントリは、その中でのタイブレーク
+    上は末尾に回る（が、Childの並び自体には影響しない）。"""
     entry_type_b_c2 = LedgerEntry(
         package_name=_TYPE_B_PACKAGE, source_path="b.xlsx",
         diff_list_rows=[_row("C2", "P2", "RevUp", datetime(2026, 8, 5))],
@@ -189,6 +197,11 @@ def test_master_sheet_sorted_by_diff_type_then_child():
         diff_list_rows=[_row("C1", "P1", "RevUp", datetime(2026, 8, 5))],
         summary_values={},
     )
+    entry_type_b_c1 = LedgerEntry(
+        package_name=_TYPE_B_PACKAGE, source_path="b2.xlsx",
+        diff_list_rows=[_row("C1", "P5", "RevUp", datetime(2026, 8, 5))],
+        summary_values={},
+    )
     entry_unresolved = LedgerEntry(
         package_name="some_manually_named_folder", source_path="c.xlsx",
         diff_list_rows=[_row("C0", "P0", "RevUp", datetime(2026, 8, 5))],
@@ -196,12 +209,40 @@ def test_master_sheet_sorted_by_diff_type_then_child():
     )
 
     wb_bytes = build_master_workbook(
-        [entry_type_b_c2, entry_type_a_c3, entry_type_a_c1, entry_unresolved],
+        [entry_type_b_c2, entry_type_a_c3, entry_type_a_c1, entry_type_b_c1, entry_unresolved],
     )
     wb = openpyxl.load_workbook(io.BytesIO(wb_bytes))
     ws = wb["Master"]
 
     rows = list(ws.iter_rows(min_row=2, values_only=True))
+    # Child が全体を通じて昇順（C0 < C1 < C1 < C2 < C3）。C2(Type B) が C3(Type A) より
+    # 前に来ることが、Diff Type優先ではなくChild優先であることの決め手。
+    # 同一Child "C1" 内では Diff Type "A" が "B" より先。
     assert [(r[0], r[5]) for r in rows] == [
-        ("C1", "A"), ("C3", "A"), ("C2", "B"), ("C0", None),
+        ("C0", None), ("C1", "A"), ("C1", "B"), ("C2", "B"), ("C3", "A"),
     ]
+
+
+def test_master_and_work_master_diff_type_cells_are_centered():
+    """Diff Type セルは Master・Work Master いずれも中央揃いにする（2026-08、
+    ユーザー要望）。"""
+    entry = LedgerEntry(
+        package_name=_TYPE_A_PACKAGE, source_path="a.xlsx",
+        diff_list_rows=[_row("C1", "P1", "RevUp", datetime(2026, 8, 5))],
+        summary_values={},
+    )
+
+    wb_bytes = build_master_workbook([entry])
+    wb = openpyxl.load_workbook(io.BytesIO(wb_bytes))
+
+    master_diff_type_col = MASTER_HEADERS.index("Diff Type") + 1
+    master_row = next(
+        r for r in wb["Master"].iter_rows(min_row=2) if r[0].value == "C1"
+    )
+    assert master_row[master_diff_type_col - 1].alignment.horizontal == "center"
+
+    wm_diff_type_col = WORK_MASTER_HEADERS.index("Diff Type") + 1
+    wm_row = next(
+        r for r in wb["Work Master"].iter_rows(min_row=2) if r[3].value == "C1"
+    )
+    assert wm_row[wm_diff_type_col - 1].alignment.horizontal == "center"
