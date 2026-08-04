@@ -25,6 +25,11 @@ _ENTITY_NUMBER_FORMAT = "#,##0"
 
 GROUP_REVISION_PATTERN = re.compile(r'^dxf_diff_results_(?:Pair|Type)[A-Za-z]_(?P<group>.+)_(?P<revision>\d+)$')
 
+# 差分方式（Type A/B/C。手動命名のPair{A/B/C}にも対応）を取り出すためのパターン。
+# 指番/モジュール/サイドと異なり台帳ファイル名には含まれないため、フォルダ名のみから
+# 判定する（2026-08、Work Master/Summaryへの列追加のため新設）。
+DIFF_TYPE_PATTERN = re.compile(r'^dxf_diff_results_(?:Pair|Type)(?P<type>[A-Za-z])_')
+
 # 指番・モジュール・サイドを個別に取り出すための厳密なパターン。DXF-diff-manager
 # 自身の指番/モジュール/サイド入力フォーマット（app.py の SHIBAN_PATTERN /
 # MODULE_PATTERN / SIDE_PATTERN、および両者を結合する MASTER_FILENAME_PATTERN）と
@@ -118,6 +123,16 @@ def parse_sashiban_module_side(package_name, filename=None):
     if not match:
         return None, None, None
     return match['shiban'], match['module'], match['side']
+
+
+def parse_diff_type(package_name):
+    """Diff Package（DXF-diff-manager 出力フォルダ名）から差分方式（Type A/B/C。
+    手動命名の Pair{A/B/C} にも対応）を取り出す。指番/モジュール/サイドと異なり
+    台帳ファイル名には含まれないため、フォルダ名のみから判定する。一致しない場合は
+    None を返す（Work Master/Summary の Diff Type / 差分方式列が空欄になる）。
+    """
+    match = DIFF_TYPE_PATTERN.match(package_name)
+    return match['type'] if match else None
 
 
 def parse_group_and_revision(package_name, filename=None):
@@ -273,31 +288,34 @@ def _total_value(revision_entries, display_label):
     return sum(_revision_value(entry, display_label) for _revision, entry in revision_entries)
 
 
-def aggregate_input_drawing_totals_by_sashiban(entries):
+def aggregate_input_drawing_totals_by_sashiban_and_diff_type(entries):
     """entries（今回のZIP入力から得たLedgerEntryのリスト）を指番_モジュール_サイド
     単位でグルーピングし、各グループの「アップロード図面総数」TOTAL値
     （指番_モジュール_サイド別集計フォルダの "{group_key}_all.xlsx" Summaryシートの
     「アップロード図面総数」行・TOTAL列と同値。"アップロード図面総数" はカウント系
     ラベルのため _total_value() の実体は単純合計だが、ここでは非数値・欠損値
     （summary_values にキーが無い場合等）を安全に0として扱うため独自に集計する）を、
-    指番（xx00-0000-0部分）ごとに合算する。命名規則に一致しないグループは対象外。
+    (指番, 差分方式) ごとに合算する（2026-08、Summaryの差分方式列追加に伴い
+    指番単独のキーから拡張。差分方式が同一指番内で異なる場合は別グループとして
+    分ける——ユーザー確認済み仕様）。命名規則に一致しないグループは対象外。
 
     Returns:
-        dict[sashiban, int|float]
+        dict[(sashiban, diff_type), int|float]
     """
     groups = group_entries(entries)
-    totals_by_sashiban = defaultdict(int)
+    totals = defaultdict(int)
     for group_key, revision_entries in groups.items():
         representative_entry = revision_entries[0][1]
         sashiban, _module, _side = parse_sashiban_module_side(
             representative_entry.package_name, representative_entry.source_path)
         if sashiban is None:
             continue
+        diff_type = parse_diff_type(representative_entry.package_name)
         for _revision, entry in revision_entries:
             value = entry.summary_values.get(_CANONICAL_BY_DISPLAY_LABEL["アップロード図面総数"])
             if isinstance(value, (int, float)):
-                totals_by_sashiban[sashiban] += value
-    return dict(totals_by_sashiban)
+                totals[(sashiban, diff_type)] += value
+    return dict(totals)
 
 
 def build_group_workbook(group_key, revision_entries):

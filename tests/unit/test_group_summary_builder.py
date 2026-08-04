@@ -15,6 +15,7 @@ from utils.group_summary_builder import (
     aggregate_diff_list_by_child,
     build_group_workbooks,
     group_entries,
+    parse_diff_type,
     parse_group_and_revision,
     parse_sashiban_module_side,
 )
@@ -69,6 +70,21 @@ def test_parse_sashiban_module_side_accepts_na_module_and_side():
 def test_parse_sashiban_module_side_returns_none_tuple_for_unrelated_names():
     assert parse_sashiban_module_side("some_other_folder") == (None, None, None)
     assert parse_sashiban_module_side("dxf_diff_results_PairA_no_revision_suffix") == (None, None, None)
+
+
+def test_parse_diff_type():
+    """"Type"（DXF-diff-manager自動生成）・"Pair"（旧手動命名）どちらのトークンでも、
+    直後の1文字（A/B/C）を差分方式として取り出す（2026-08、Work Master/Summaryへの
+    列追加のため新設）。"""
+    assert parse_diff_type("dxf_diff_results_TypeA_ME24-1001-0_ZC00_405") == "A"
+    assert parse_diff_type("dxf_diff_results_PairB_ME24-1001-0_ZMF1_405_01") == "B"
+    # モジュール/サイドが無いフォルダ名でも、Type直後の文字だけで判定できる
+    assert parse_diff_type("dxf_diff_results_TypeC_PE25-9601-0") == "C"
+
+
+def test_parse_diff_type_returns_none_for_unrelated_names():
+    assert parse_diff_type("some_other_folder") is None
+    assert parse_diff_type("dxf_diff_results_no_type_token_ME24-1001-0") is None
 
 
 def test_group_entries_picks_latest_recorded_date_when_folder_has_duplicate_ledgers():

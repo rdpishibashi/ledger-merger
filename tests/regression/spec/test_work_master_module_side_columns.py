@@ -83,5 +83,5 @@ def test_summary_pair_count_unaffected_by_module_side_key_change():
     summary_rows = compute_summary_rows([entry_zc00, entry_zm00], run_timestamp=datetime(2026, 8, 4))
 
     assert len(summary_rows) == 1
-    pair_count = summary_rows[0][6]  # 差分ペア総数
+    pair_count = summary_rows[0][7]  # 差分ペア総数（指番,差分方式の次）
     assert pair_count == 1  # モジュール違いでも(Child,Parent)は1ペアとして数える

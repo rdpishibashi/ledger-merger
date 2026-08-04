@@ -117,7 +117,7 @@ def test_master_accumulation_merge_keeps_newer_previous_row():
     assert master_row[7] == 999  # 前回（より新しいRecorded Date）の値が保持される
 
     wm_row = next(r for r in wb["Work Master"].iter_rows(min_row=2, values_only=True) if r[3] == "C1")
-    assert wm_row[9] == 999  # Work Masterも同様の規則
+    assert wm_row[8] == 999  # Work Masterも同様の規則
 
 
 def test_master_accumulation_merge_overwrites_with_newer_incoming_row():
@@ -173,5 +173,5 @@ def test_within_run_duplicate_pair_picks_latest_recorded_date():
     unique_wm = extract_unique_work_master_rows(
         [entry_appearing_first_but_older, entry_appearing_second_but_newer]
     )
-    assert unique_wm[("ME24-1001-0", "ZC00", "405", "C1", "P1")][9] == 1
-    assert unique_wm[("ME24-1001-0", "ZM00", "405", "C1", "P1")][9] == 999
+    assert unique_wm[("ME24-1001-0", "ZC00", "405", "C1", "P1")][8] == 1
+    assert unique_wm[("ME24-1001-0", "ZM00", "405", "C1", "P1")][8] == 999

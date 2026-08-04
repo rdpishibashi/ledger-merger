@@ -161,6 +161,10 @@ def test_extract_unique_work_master_rows_dedupes_and_excludes_unresolvable_sashi
 
 
 def test_extract_unique_work_master_rows_excludes_relation_and_includes_sashiban():
+    """列順は Sashiban, Module, Side, Child, Parent, Title, Subtitle, Diff Type,
+    Deleted/Added/Diff/Unchanged/Total Entities, Note, Recorded Date（2026-08、
+    Diff Type追加とNote/Recorded Dateの末尾移動後の構成）。Diff Type は
+    package_name（"dxf_diff_results_PairA_..."）の "A" が入る。"""
     entry = LedgerEntry(
         package_name=_MATCHING_PACKAGE_NAME, source_path="a.xlsx",
         diff_list_rows=[_row("C1", "P1", datetime(2026, 7, 1), deleted=10, added=20, diff=30, unchanged=40, total=50)],
@@ -171,7 +175,7 @@ def test_extract_unique_work_master_rows_excludes_relation_and_includes_sashiban
     row = unique[("ME24-1001-0", "ZC00", "405", "C1", "P1")]
 
     assert row == (
-        "ME24-1001-0", "ZC00", "405", "C1", "P1", "T", "S", datetime(2026, 7, 1), None, 10, 20, 30, 40, 50,
+        "ME24-1001-0", "ZC00", "405", "C1", "P1", "T", "S", "A", 10, 20, 30, 40, 50, None, datetime(2026, 7, 1),
     )
     assert "RevUp" not in row  # Relation列は含まれない
 
@@ -225,8 +229,8 @@ def test_build_master_workbook_work_master_overwrites_matching_key_and_keeps_oth
 
     rows_by_child = {row[3]: row for row in wm_ws.iter_rows(min_row=2, values_only=True)}
     assert set(rows_by_child.keys()) == {"C1", "C_OLD_ONLY"}
-    assert rows_by_child["C1"][9] == 1  # 上書きされた新しい値（Deleted Entities）
-    assert rows_by_child["C_OLD_ONLY"][9] == 999  # 旧データがそのまま保持される
+    assert rows_by_child["C1"][8] == 1  # 上書きされた新しい値（Deleted Entities）
+    assert rows_by_child["C_OLD_ONLY"][8] == 999  # 旧データがそのまま保持される
 
 
 def test_read_work_master_rows_returns_none_when_sheet_missing():
@@ -260,7 +264,7 @@ def test_compute_summary_rows_values():
     本テストのデータは全行 Relation='RevUp' のため完全新規図面は0件（完全新規図面の
     除外・カウントの検証は test_compute_summary_rows_excludes_brand_new_from_pair_count
     参照）。指番図面総数は指番_モジュール_サイド別集計と同じ「アップロード図面総数」
-    TOTAL値。"""
+    TOTAL値。差分方式（"dxf_diff_results_PairA_..."から逆算される"A"）は2026-08追加。"""
     entry = LedgerEntry(
         package_name=_MATCHING_PACKAGE_NAME, source_path="a.xlsx",
         diff_list_rows=[
@@ -273,9 +277,10 @@ def test_compute_summary_rows_values():
     rows = compute_summary_rows([entry], run_timestamp=datetime(2026, 7, 31, 12, 0, 0))
 
     assert len(rows) == 1
-    (sashiban, deleted, added, changed, entity_total, change_rate, pair_count,
+    (sashiban, diff_type, deleted, added, changed, entity_total, change_rate, pair_count,
      brand_new_count, input_total, reuse_rate, brand_new_rate, ts) = rows[0]
     assert sashiban == "ME24-1001-0"
+    assert diff_type == "A"
     assert (deleted, added, changed) == (15, 25, 40)  # 10+5, 20+5, 40=15+25
     assert entity_total == 150  # 100+50
     assert change_rate == 40 / 150
@@ -308,7 +313,7 @@ def test_compute_summary_rows_excludes_brand_new_from_pair_count():
     rows = compute_summary_rows([entry], run_timestamp=datetime.now())
 
     assert len(rows) == 1
-    (_sashiban, deleted, added, changed, entity_total, _change_rate, pair_count,
+    (_sashiban, _diff_type, deleted, added, changed, entity_total, _change_rate, pair_count,
      brand_new_count, input_total, reuse_rate, brand_new_rate, _ts) = rows[0]
     assert pair_count == 1  # 完全新規図面（C2）を除外し、通常ペア（C1）のみ
     assert brand_new_count == 1
@@ -341,7 +346,7 @@ def test_compute_summary_rows_treats_non_numeric_entity_values_as_zero():
     )
 
     rows = compute_summary_rows([entry], run_timestamp=datetime.now())
-    _sashiban, deleted, added, changed, entity_total, *_rest = rows[0]
+    _sashiban, _diff_type, deleted, added, changed, entity_total, *_rest = rows[0]
 
     assert deleted == 0
     assert added == 100
