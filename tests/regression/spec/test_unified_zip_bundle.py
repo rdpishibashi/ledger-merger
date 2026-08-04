@@ -84,7 +84,7 @@ def test_master_sheet_in_bundle_is_child_parent_deduped_diff_list_shape():
     assert children == sorted(children)  # Child昇順
 
 
-def test_work_master_sheet_in_bundle_is_sashiban_child_parent_deduped():
+def test_work_master_sheet_in_bundle_is_sashiban_module_side_child_parent_deduped():
     from utils.master_ledger_builder import WORK_MASTER_HEADERS
 
     entries, _missing = find_ledger_files(REAL_DATA_ROOT)
@@ -97,10 +97,10 @@ def test_work_master_sheet_in_bundle_is_sashiban_child_parent_deduped():
     ws = wb["Work Master"]
     assert tuple(c.value for c in ws[1]) == WORK_MASTER_HEADERS
 
-    keys = [(row[0], row[1], row[2]) for row in ws.iter_rows(min_row=2, values_only=True)]
-    assert len(keys) == len(set(keys))  # 重複なし（指番,Child,Parent）
-    assert keys == sorted(keys)  # 指番→Child昇順
-    assert all(sashiban is not None for sashiban, _child, _parent in keys)  # 指番不明エントリは除外済み
+    keys = [(row[0], row[1], row[2], row[3], row[4]) for row in ws.iter_rows(min_row=2, values_only=True)]
+    assert len(keys) == len(set(keys))  # 重複なし（指番,モジュール,サイド,Child,Parent）
+    assert keys == sorted(keys)  # 指番→モジュール→サイド→Child昇順
+    assert all(sashiban is not None for sashiban, _m, _s, _child, _parent in keys)  # 指番不明エントリは除外済み
 
 
 def test_summary_sheet_in_bundle_has_one_row_per_sashiban_for_first_run():

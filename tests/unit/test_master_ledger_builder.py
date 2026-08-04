@@ -131,8 +131,11 @@ _UNRESOLVABLE_PACKAGE_NAME = "some_manually_named_folder"
 
 
 def test_extract_unique_work_master_rows_dedupes_and_excludes_unresolvable_sashiban():
-    """指番を逆算できるエントリのみ (指番,Child,Parent) でユニーク化する。
-    逆算できないエントリ（package_nameが命名規則に一致しない）は対象外。"""
+    """指番を逆算できるエントリのみ (指番,モジュール,サイド,Child,Parent) で
+    ユニーク化する。逆算できないエントリ（package_nameが命名規則に一致しない）は
+    対象外。同一 (指番,Child,Parent) でもモジュール/サイドが異なれば別行として残る
+    （2026-08、実データで同一指番+Child+Parentが複数モジュールに跨る例を確認した
+    ための仕様）。"""
     resolvable = LedgerEntry(
         package_name=_MATCHING_PACKAGE_NAME, source_path="a.xlsx",
         diff_list_rows=[_row("C1", "P1", datetime(2026, 7, 1))],
@@ -151,7 +154,10 @@ def test_extract_unique_work_master_rows_dedupes_and_excludes_unresolvable_sashi
 
     unique = extract_unique_work_master_rows([resolvable, duplicate_pair_different_entry, unresolvable])
 
-    assert set(unique.keys()) == {("ME24-1001-0", "C1", "P1")}
+    assert set(unique.keys()) == {
+        ("ME24-1001-0", "ZC00", "405", "C1", "P1"),
+        ("ME24-1001-0", "ZMF1", "405", "C1", "P1"),
+    }
 
 
 def test_extract_unique_work_master_rows_excludes_relation_and_includes_sashiban():
@@ -162,9 +168,11 @@ def test_extract_unique_work_master_rows_excludes_relation_and_includes_sashiban
     )
 
     unique = extract_unique_work_master_rows([entry])
-    row = unique[("ME24-1001-0", "C1", "P1")]
+    row = unique[("ME24-1001-0", "ZC00", "405", "C1", "P1")]
 
-    assert row == ("ME24-1001-0", "C1", "P1", "T", "S", datetime(2026, 7, 1), None, 10, 20, 30, 40, 50)
+    assert row == (
+        "ME24-1001-0", "ZC00", "405", "C1", "P1", "T", "S", datetime(2026, 7, 1), None, 10, 20, 30, 40, 50,
+    )
     assert "RevUp" not in row  # Relation列は含まれない
 
 
@@ -186,12 +194,13 @@ def test_build_master_workbook_work_master_populated_for_matching_package_names(
 
     rows = list(wm_ws.iter_rows(min_row=2, values_only=True))
     assert len(rows) == 1  # 指番不明の entry_2 は含まれない
-    assert rows[0][:3] == ("ME24-1001-0", "C2", "P2")
+    assert rows[0][:5] == ("ME24-1001-0", "ZC00", "405", "C2", "P2")
 
 
 def test_build_master_workbook_work_master_overwrites_matching_key_and_keeps_others():
-    """前回のWork Masterに存在する行のうち、今回のデータに無い(指番,Child,Parent)は残す。
-    同じキーは今回のデータで上書きする（Masterシートと同じ蓄積方式）。"""
+    """前回のWork Masterに存在する行のうち、今回のデータに無い
+    (指番,モジュール,サイド,Child,Parent) は残す。同じキーは今回のデータで
+    上書きする（Masterシートと同じ蓄積方式）。"""
     previous_entry = LedgerEntry(
         package_name=_MATCHING_PACKAGE_NAME, source_path="prev.xlsx",
         diff_list_rows=[
@@ -214,10 +223,10 @@ def test_build_master_workbook_work_master_overwrites_matching_key_and_keeps_oth
     wb = openpyxl.load_workbook(io.BytesIO(merged_bytes))
     wm_ws = wb[WORK_MASTER_SHEET_NAME]
 
-    rows_by_child = {row[1]: row for row in wm_ws.iter_rows(min_row=2, values_only=True)}
+    rows_by_child = {row[3]: row for row in wm_ws.iter_rows(min_row=2, values_only=True)}
     assert set(rows_by_child.keys()) == {"C1", "C_OLD_ONLY"}
-    assert rows_by_child["C1"][7] == 1  # 上書きされた新しい値（Deleted Entities）
-    assert rows_by_child["C_OLD_ONLY"][7] == 999  # 旧データがそのまま保持される
+    assert rows_by_child["C1"][9] == 1  # 上書きされた新しい値（Deleted Entities）
+    assert rows_by_child["C_OLD_ONLY"][9] == 999  # 旧データがそのまま保持される
 
 
 def test_read_work_master_rows_returns_none_when_sheet_missing():
