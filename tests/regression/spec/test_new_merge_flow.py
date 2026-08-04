@@ -13,6 +13,11 @@
 `tests/regression/README.md` 記載のとおり、2026-07-29 に claude-in-chrome の
 ブラウザ自動操作で実施済み（ZIP複数・自動使用マージ・エスケープハッチの
 組み合わせを含む）。
+
+2026-08、「新規統合の実行」の表示条件に `not zip_files` を追加（ダウンロード後に
+新しいZIPが選択された状態では、次の操作を「統合実行」1つに絞るため隠す）。
+`zip_files` は `AppTest` でシードできないため、この追加条件は本テストではなく
+実ブラウザでの確認に委ねる（`tests/regression/README.md` 参照）。
 """
 
 from streamlit.testing.v1 import AppTest

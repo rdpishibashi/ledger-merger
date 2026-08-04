@@ -53,7 +53,11 @@ else:
 
 has_input = bool(zip_files) and (master_upload is not None or master_bytes_override is not None)
 
-merge_done = "final_zip_bytes" in st.session_state
+# ZIPアップローダーはドロップのたびに選択が積み重なる（置き換わらない）ため、統合実行の
+# 成功直後に毎回リセットする（zip_uploader_version を進める。2026-08）。これにより
+# merge_done は「最後に統合したときのまま新しい入力が無い」を意味するようになり、
+# 統合後にZIPを追加すると自動的に primary（青）へ戻る。
+merge_done = "final_zip_bytes" in st.session_state and not zip_files
 run = st.button("統合実行", type="secondary" if merge_done else "primary", disabled=not has_input)
 
 if run:
@@ -147,6 +151,7 @@ if run:
         st.session_state["merged_unresolved_sashiban"] = unresolved_sashiban_names
         st.session_state["group_summary_count"] = len(group_files)
         st.session_state["downloaded_once"] = False
+        st.session_state["zip_uploader_version"] = zip_uploader_version + 1
         st.rerun()
 
 if "final_zip_bytes" in st.session_state:
@@ -182,7 +187,10 @@ if "final_zip_bytes" in st.session_state:
         st.session_state["downloaded_once"] = True
         st.rerun()
 
-    if st.session_state.get("downloaded_once"):
+    # 新しいZIPが既に選択されている状態では、次に取るべき操作は「統合実行」1つに
+    # 絞る（zip_files が空でない間は「新規統合の実行」を隠す。2026-08。両方が同時に
+    # 青く表示されると、どちらを押すべきか紛らわしいため）。
+    if st.session_state.get("downloaded_once") and not zip_files:
         if st.button("新規統合の実行", type="primary"):
             st.session_state["use_last_master"] = True
             st.session_state["zip_uploader_version"] = zip_uploader_version + 1
