@@ -11,6 +11,7 @@ import openpyxl
 
 from utils.ledger_finder import DIFF_LIST_HEADERS, LedgerEntry
 from utils.master_ledger_builder import (
+    MASTER_HEADERS,
     MASTER_SHEET_NAME,
     SUMMARY_HEADERS,
     SUMMARY_SHEET_NAME,
@@ -66,7 +67,7 @@ def test_build_master_workbook_has_three_sheets_in_order():
     assert wb.sheetnames == [MASTER_SHEET_NAME, WORK_MASTER_SHEET_NAME, SUMMARY_SHEET_NAME]
     ws = wb[MASTER_SHEET_NAME]
     header = tuple(c.value for c in ws[1])
-    assert header == DIFF_LIST_HEADERS
+    assert header == MASTER_HEADERS
 
     children = [ws.cell(row=r, column=1).value for r in range(2, ws.max_row + 1)]
     assert children == ["C1", "C2"]
@@ -108,8 +109,8 @@ def test_build_master_workbook_overwrites_matching_pair_and_keeps_others():
         row[0]: row for row in ws.iter_rows(min_row=2, values_only=True)
     }
     assert set(rows_by_child.keys()) == {"C1", "C_OLD_ONLY"}
-    assert rows_by_child["C1"][7] == 1  # 上書きされた新しい値（Deleted Entities）
-    assert rows_by_child["C_OLD_ONLY"][7] == 999  # 旧データがそのまま保持される
+    assert rows_by_child["C1"][6] == 1  # 上書きされた新しい値（Deleted Entities）
+    assert rows_by_child["C_OLD_ONLY"][6] == 999  # 旧データがそのまま保持される
 
 
 def test_read_master_rows_returns_none_for_invalid_file():

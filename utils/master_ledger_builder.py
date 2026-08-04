@@ -14,7 +14,11 @@ Streamlit には依存しない。
 
 "Summary" は指番・差分方式ごとに、今回アップロードしたZIPのデータのみから算出した
 集計値を1行として毎回追記していく（Master/Work Masterのようなキー単位のマージ・
-上書きは行わない）。同じ指番の履歴を実行日時ごとに追うための単純な追記ログ。"""
+上書きは行わない）。同じ指番の履歴を実行日時ごとに追うための単純な追記ログ。
+
+"Master"・"Work Master" はいずれも Diff Type 列（Diff Package から
+parse_diff_type() で逆算）を持つが、フィールド構成自体は異なる（Master は
+Sashiban/Module/Side を持たず Relation を保持する。Work Master はその逆）。"""
 
 import io
 from datetime import datetime
@@ -51,6 +55,20 @@ _ADDED_COL = DIFF_LIST_HEADERS.index("Added Entities")
 _DIFF_COL = DIFF_LIST_HEADERS.index("Diff Entities")
 _UNCHANGED_COL = DIFF_LIST_HEADERS.index("Unchanged Entities")
 _TOTAL_COL = DIFF_LIST_HEADERS.index("Total Entities")
+
+# Master の列構成（2026-08、Work Masterと同じ並び替えパターンを適用。Sashiban・
+# Module・Side は追加しない——Master は指番を問わず Child-Parent 単位で全体を
+# ユニーク化するシートであり、Work Masterとはフィールド構成が異なる。ユーザー確認
+# 済み：DIFF_LIST_HEADERSの並びをそのまま転記する方式から、明示的な列順の指定に
+# 変更し、Subtitleと Deleted Entitiesの間に Diff Type を追加、Note・Recorded Date
+# を Total Entities の後ろへ移動）。
+MASTER_HEADERS = (
+    "Child", "Parent", "Relation", "Title", "Subtitle", "Diff Type",
+    "Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities",
+    "Total Entities", "Note", "Recorded Date",
+)
+_MASTER_DIFF_TYPE_COL = MASTER_HEADERS.index("Diff Type")
+_MASTER_RECORDED_DATE_COL = MASTER_HEADERS.index("Recorded Date")
 
 # Work Master の列構成（2026-08、Sashiban と Child の間に Module・Side を追加した後、
 # さらに Subtitle と Deleted Entities の間に Diff Type を追加し、Note・Recorded Date を
@@ -90,24 +108,32 @@ def _recorded_date_or_min(value):
 
 def extract_unique_child_parent_rows(entries):
     """LedgerEntry のリストから、"Child"-"Parent" ペアでユニーク化した
-    DIFF_LIST_HEADERS 12列のデータを返す。同じペアが複数エントリにまたがる場合は
+    MASTER_HEADERS 13列のデータを返す。同じペアが複数エントリにまたがる場合は
     "Recorded Date" が最も新しい行を採用する（2026-08、同一ペアが複数の
     DXF-diff-manager出力フォルダに異なる実行時刻で記録される実データケースを
-    確認したための変更。それまでは先勝ちだった）。
+    確認したための変更。それまでは先勝ちだった）。Diff Type は Diff Package
+    （出力フォルダ名）から parse_diff_type() で逆算する（指番の解決可否に関わらず
+    全エントリが対象——Master は Work Master と異なり指番不明のエントリも含むため）。
 
     Returns:
         dict[(child, parent), tuple]
     """
     unique = {}
     for entry in entries:
+        diff_type = parse_diff_type(entry.package_name)
         for row in entry.diff_list_rows:
             key = (row[_CHILD_COL], row[_PARENT_COL])
+            candidate = (
+                row[_CHILD_COL], row[_PARENT_COL], row[_RELATION_COL], row[_TITLE_COL], row[_SUBTITLE_COL],
+                diff_type, row[_DELETED_COL], row[_ADDED_COL], row[_DIFF_COL], row[_UNCHANGED_COL],
+                row[_TOTAL_COL], row[_NOTE_COL], row[_RECORDED_DATE_COL],
+            )
             existing = unique.get(key)
             if existing is None or (
-                _recorded_date_or_min(row[_RECORDED_DATE_COL])
-                > _recorded_date_or_min(existing[_RECORDED_DATE_COL])
+                _recorded_date_or_min(candidate[_MASTER_RECORDED_DATE_COL])
+                > _recorded_date_or_min(existing[_MASTER_RECORDED_DATE_COL])
             ):
-                unique[key] = row
+                unique[key] = candidate
     return unique
 
 
@@ -182,7 +208,9 @@ def extract_unique_work_master_rows(entries):
 def read_master_rows(file_bytes):
     """アップロードされた統合図面管理台帳.xlsx（Masterシートのみ）から
     (child, parent) をキーとする行の辞書を読み込む。シート構成が想定と異なる
-    （壊れている、別ファイル等）場合は None を返す。
+    （壊れている、別ファイル等。旧12列形式〈Diff Type追加・Note/Recorded Date
+    移動前〉も含む）場合は None を返す。先頭2列（Child, Parent）の位置は列構成
+    変更の前後で変わらないため、キーの取り出し方自体は変更不要。
     """
     try:
         wb = load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
@@ -194,7 +222,7 @@ def read_master_rows(file_bytes):
             return None
         ws = wb[MASTER_SHEET_NAME]
         rows = list(ws.iter_rows(values_only=True))
-        if not rows or tuple(rows[0]) != DIFF_LIST_HEADERS:
+        if not rows or tuple(rows[0]) != MASTER_HEADERS:
             return None
         return {(row[_CHILD_COL], row[_PARENT_COL]): tuple(row) for row in rows[1:]}
     finally:
@@ -398,7 +426,7 @@ def build_master_workbook(
     無ければ空）の末尾に追記する。
     """
     combined_master = _merge_by_recorded_date(
-        previous_master_rows, extract_unique_child_parent_rows(entries), _RECORDED_DATE_COL,
+        previous_master_rows, extract_unique_child_parent_rows(entries), _MASTER_RECORDED_DATE_COL,
     )
     combined_work_master = _merge_by_recorded_date(
         previous_work_master_rows, extract_unique_work_master_rows(entries), _WM_RECORDED_DATE_COL,
@@ -409,9 +437,17 @@ def build_master_workbook(
     wb = Workbook()
     ws = wb.active
     ws.title = MASTER_SHEET_NAME
+    # 並び順は Diff Type → Child（2026-08、ユーザー要望により Diff Type をソート
+    # キーに追加。Diff Type はキー〈child, parent〉ではなく行の値側にあるため、
+    # combined_master から都度引いて判定する。None〈逆算不可〉は末尾に回す）。
     _write_ledger_sheet(
-        ws, DIFF_LIST_HEADERS, combined_master,
-        sort_key=lambda k: k[0], recorded_date_col_idx=_RECORDED_DATE_COL,
+        ws, MASTER_HEADERS, combined_master,
+        sort_key=lambda k: (
+            combined_master[k][_MASTER_DIFF_TYPE_COL] is None,
+            combined_master[k][_MASTER_DIFF_TYPE_COL] or "",
+            k[0],
+        ),
+        recorded_date_col_idx=_MASTER_RECORDED_DATE_COL,
     )
 
     wm_ws = wb.create_sheet(WORK_MASTER_SHEET_NAME)

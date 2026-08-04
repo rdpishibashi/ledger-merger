@@ -114,7 +114,7 @@ def test_master_accumulation_merge_keeps_newer_previous_row():
     wb = openpyxl.load_workbook(io.BytesIO(merged_bytes))
 
     master_row = next(r for r in wb["Master"].iter_rows(min_row=2, values_only=True) if r[0] == "C1")
-    assert master_row[7] == 999  # 前回（より新しいRecorded Date）の値が保持される
+    assert master_row[6] == 999  # 前回（より新しいRecorded Date）の値が保持される
 
     wm_row = next(r for r in wb["Work Master"].iter_rows(min_row=2, values_only=True) if r[3] == "C1")
     assert wm_row[8] == 999  # Work Masterも同様の規則
@@ -140,7 +140,7 @@ def test_master_accumulation_merge_overwrites_with_newer_incoming_row():
     wb = openpyxl.load_workbook(io.BytesIO(merged_bytes))
 
     master_row = next(r for r in wb["Master"].iter_rows(min_row=2, values_only=True) if r[0] == "C1")
-    assert master_row[7] == 999
+    assert master_row[6] == 999
 
 
 def test_within_run_duplicate_pair_picks_latest_recorded_date():
@@ -168,7 +168,7 @@ def test_within_run_duplicate_pair_picks_latest_recorded_date():
     unique = extract_unique_child_parent_rows(
         [entry_appearing_first_but_older, entry_appearing_second_but_newer]
     )
-    assert unique[("C1", "P1")][7] == 999
+    assert unique[("C1", "P1")][6] == 999
 
     unique_wm = extract_unique_work_master_rows(
         [entry_appearing_first_but_older, entry_appearing_second_but_newer]

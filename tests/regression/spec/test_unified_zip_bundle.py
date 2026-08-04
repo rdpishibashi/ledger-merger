@@ -65,7 +65,7 @@ def test_bundle_contains_expected_files_with_fixed_names():
 
 
 def test_master_sheet_in_bundle_is_child_parent_deduped_diff_list_shape():
-    from utils.ledger_finder import DIFF_LIST_HEADERS
+    from utils.master_ledger_builder import MASTER_HEADERS
 
     entries, _missing = find_ledger_files(REAL_DATA_ROOT)
     bundle = _build_bundle(entries)
@@ -76,12 +76,15 @@ def test_master_sheet_in_bundle_is_child_parent_deduped_diff_list_shape():
     wb = openpyxl.load_workbook(io.BytesIO(master_bytes))
     assert wb.sheetnames == ["Master", "Work Master", "Summary"]
     ws = wb["Master"]
-    assert tuple(c.value for c in ws[1]) == DIFF_LIST_HEADERS
+    assert tuple(c.value for c in ws[1]) == MASTER_HEADERS
 
     child_parent_pairs = [(row[0], row[1]) for row in ws.iter_rows(min_row=2, values_only=True)]
     assert len(child_parent_pairs) == len(set(child_parent_pairs))  # 重複なし
     children = [pair[0] for pair in child_parent_pairs]
-    assert children == sorted(children)  # Child昇順
+    # フィクスチャは全エントリが差分方式"A"で統一のため、並び順はChild昇順と一致する
+    # （実際のソートキーは Diff Type→Child。差分方式混在時のソートは
+    # test_master_summary_diff_type_columns.py で別途検証）
+    assert children == sorted(children)
 
 
 def test_work_master_sheet_in_bundle_is_sashiban_module_side_child_parent_deduped():
