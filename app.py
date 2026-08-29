@@ -15,9 +15,9 @@ from utils.master_ledger_builder import (
     read_work_master_rows,
 )
 
-st.set_page_config(page_title="図面親子管理台帳 統合ツール", page_icon="📑", layout="wide")
+st.set_page_config(page_title="図面管理台帳 統合ツール", page_icon="📑", layout="wide")
 
-st.title("図面親子管理台帳 統合ツール")
+st.title("図面管理台帳 統合ツール")
 st.write(
     "DXF-diff-manager の複数の出力フォルダにある台帳ファイル（Diff List シート）を"
     "1つの Excel ファイルに統合します。"
@@ -26,7 +26,7 @@ st.write(
 zip_uploader_version = st.session_state.get("zip_uploader_version", 0)
 use_last_master = st.session_state.get("use_last_master", False)
 
-st.subheader("ZIPファイルをアップロード")
+st.subheader("図面台帳ZIPファイルをアップロード")
 st.caption("DXF-diff-manager の出力フォルダ群を ZIP 化してアップロードしてください（複数可）。")
 zip_files = st.file_uploader(
     "ZIPファイル",
@@ -46,7 +46,7 @@ if use_last_master and st.session_state.get("master_bytes"):
     master_bytes_override = st.session_state["master_bytes"]
 else:
     st.caption(
-        "前回ダウンロードした統合図面管理台帳.xlsxをアップロードしてください。今回の結果を"
+        "統合図面管理台帳.xlsxをアップロードしてください。今回の結果を"
         "マージ（同じChild-Parentは上書き）した最新版を出力します。"
     )
     master_upload = st.file_uploader("統合図面管理台帳.xlsx", type=["xlsx"], key="master_upload")
