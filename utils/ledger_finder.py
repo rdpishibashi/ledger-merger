@@ -1,5 +1,6 @@
-"""DXF-diff-manager の出力フォルダ群から台帳ファイル（Diff List + Summary シートを持つ
-.xlsx）を再帰的に検出するモジュール。Streamlit には依存しない。"""
+"""DXF-diff-manager の出力フォルダ群から台帳ファイル（Child/Parent等の列構成を持つ
+データシート + Summary シートを持つ .xlsx）を再帰的に検出するモジュール。
+Streamlit には依存しない。"""
 
 import os
 from dataclasses import dataclass
@@ -93,6 +94,27 @@ def _read_summary_values(ws):
     return values
 
 
+def _find_diff_list_rows(wb):
+    """データシート（ヘッダー行が DIFF_LIST_HEADERS と完全一致するシート）を
+    シート名に依存せず探し、全行を返す。
+
+    DXF-diff-manager 側はこのシート名を過去の改修で変えてきた実績があり
+    （'Diff List' → 'Master'、2026-08改名）、今後も変わりうる。固定シート名に
+    依存すると、名前が変わった途端に台帳が黙って「無効」判定され統合対象から
+    除外される（2026-08、'Master' への改名で実際に発生しかけた問題）。
+    DXF-diff-manager 自身の load_parent_child_master()（model/master_ledger.py）
+    と同じ考え方で、列構成（ヘッダーの完全一致）で判定する。
+
+    Returns:
+        list または None: 見つかったシートの全行（ヘッダー含む）。無ければ None。
+    """
+    for name in wb.sheetnames:
+        rows = list(wb[name].iter_rows(values_only=True))
+        if rows and tuple(rows[0]) == DIFF_LIST_HEADERS:
+            return rows
+    return None
+
+
 def _try_load_ledger(path):
     """path が有効な台帳ファイルなら LedgerEntry を返す。そうでなければ None。"""
     try:
@@ -101,12 +123,11 @@ def _try_load_ledger(path):
         return None
 
     try:
-        if "Diff List" not in wb.sheetnames or "Summary" not in wb.sheetnames:
+        if "Summary" not in wb.sheetnames:
             return None
 
-        ws_diff = wb["Diff List"]
-        rows = list(ws_diff.iter_rows(values_only=True))
-        if not rows or tuple(rows[0]) != DIFF_LIST_HEADERS:
+        rows = _find_diff_list_rows(wb)
+        if rows is None:
             return None
 
         # Total Entities が空欄の行は、実際には差分抽出されていない図番ペアの
