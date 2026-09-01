@@ -33,14 +33,25 @@ ENTITY_LABELS = ("Deleted Entities", "Added Entities", "Diff Entities", "Unchang
 
 SUMMARY_LABELS = (
     "削除図形数 合計", "追加図形数 合計", "差分図形数 合計", "変更なし図形数 合計",
-    "総図形数 合計", "図形変更率 [%]", "入力図面総数", "差分抽出ペア数", "流用率 [%]",
+    "総図形数 合計", "図形変更率 [%]",
 )
 
 # DXF-diff-manager のバージョンによってはSummaryシートに含まれない指標。
-# SUMMARY_LABELS（台帳判定の必須条件）には含めない——必須にすると、この2指標を
+# SUMMARY_LABELS（台帳判定の必須条件）には含めない——必須にすると、この指標を
 # 持たないDXF-diff-manager出力の台帳がすべて無効判定されてしまうため。存在すれば
 # summary_values に取り込むだけの任意項目とし、欠損時は呼び出し側で0として扱う。
-OPTIONAL_SUMMARY_LABELS = ("完全新規図面数", "新規作成率 [%]")
+#
+# 「入力図面総数」「差分抽出ペア数」「流用率 [%]」は、DXF-diff-manager が
+# 2026-09 に Summary シートの「図面統計」欄（見出し＋この3項目＋「完全新規図面数」
+# 「新規作成率 [%]」）を全削除したことに伴い、ここで必須（SUMMARY_LABELS）から
+# 任意（OPTIONAL_SUMMARY_LABELS）へ格下げした。新形式の台帳（この3項目を持たない）
+# を必須のままにすると、台帳自体が黙って「無効」判定され統合対象から除外される
+# （2026-08、"Master" へのシート名改名で実際に発生しかけた問題と同種の失敗モード）。
+# 新形式の台帳では、これらに依存する下流の指標（Ledger-merger の「指番図面総数」
+# 「流用率 [%]」「新規作成率 [%]」）は 0 として集計される（app.py 側で警告表示する）。
+OPTIONAL_SUMMARY_LABELS = (
+    "入力図面総数", "差分抽出ペア数", "流用率 [%]", "完全新規図面数", "新規作成率 [%]",
+)
 
 # SUMMARY_LABELS（Ledger-merger 自身の統合Excel出力列名。README.md 記載の契約）に対する、
 # DXF-diff-manager の Summary シート側の実際のラベル文言。DXF-diff-manager 側でラベル

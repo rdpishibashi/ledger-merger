@@ -100,6 +100,21 @@ def _recorded_date_or_min(value):
     return value if isinstance(value, datetime) else datetime.min
 
 
+def _sort_str(value):
+    """ソートキーの各要素を文字列に正規化する。
+
+    Sashiban/Module/Side/Child は本来すべて文字列だが、アップロードされた前回の
+    統合図面管理台帳.xlsx（previous_master_rows/previous_work_master_rows。
+    openpyxl でセルの生値をそのまま読む）に、数字だけのセル（例: サイド "405"）が
+    テキストではなく数値として保存されていた場合、int/float で返ってくることが
+    ある（Excel上での手編集・別ツールでの再保存等が原因になりうる。2026-09
+    ユーザー報告で実際に発生: `TypeError: '<' not supported between instances of
+    'str' and 'int'`）。None（空欄セル）と合わせて、ここで一律 str に変換してから
+    比較することでクラッシュを防ぐ。
+    """
+    return '' if value is None else str(value)
+
+
 def extract_unique_child_parent_rows(entries):
     """LedgerEntry のリストから、"Child"-"Parent" ペアでユニーク化した
     MASTER_HEADERS 13列のデータを返す。同じペアが複数エントリにまたがる場合は
@@ -428,20 +443,36 @@ def build_master_workbook(
     # 見えなくなる）。Diff Type はキー〈child, parent〉ではなく行の値側にあるため、
     # combined_master から都度引いて判定する。None〈逆算不可〉は同一Child内で
     # 末尾に回す。
+    #
+    # k[0]（Child）・Diff Type を _sort_str() で文字列に正規化しているのは、
+    # アップロードされた前回の統合図面管理台帳.xlsx（previous_master_rows。
+    # openpyxl でセルの生値をそのまま読む）に、空欄セル（None）や数値として
+    # 保存されたセル（int/float）が混在していた場合、今回分（常に文字列）との
+    # 比較でクラッシュするのを防ぐため（_sort_str() のdocstring参照。2026-09、
+    # Work Master側で実際に発生した不具合と同じクラス）。
     _write_ledger_sheet(
         ws, MASTER_HEADERS, combined_master,
         sort_key=lambda k: (
-            k[0],
+            _sort_str(k[0]),
             combined_master[k][_MASTER_DIFF_TYPE_COL] is None,
-            combined_master[k][_MASTER_DIFF_TYPE_COL] or "",
+            _sort_str(combined_master[k][_MASTER_DIFF_TYPE_COL]),
         ),
         recorded_date_col_idx=_MASTER_RECORDED_DATE_COL,
     )
 
     wm_ws = wb.create_sheet(WORK_MASTER_SHEET_NAME)
+    # 各要素を _sort_str() で文字列に正規化しているのは、アップロードされた前回の
+    # 統合図面管理台帳.xlsx（previous_work_master_rows）の Work Master シートに、
+    # Sashiban/Module/Side/Child のいずれかが空欄（None）や数値として保存された
+    # セル（int/float。例: サイド "405" が数値として保存されていた場合）を持つ
+    # 行が混在していた場合、今回分（parse_sashiban_module_side() が返す値は
+    # 必ず文字列）との比較でクラッシュするのを防ぐため（_sort_str() の
+    # docstring参照。2026-09 ユーザー報告で実際に発生。当初 `or ''` で None のみ
+    # 防御していたが、int混在の再発報告を受けて str() 正規化に強化した）。
     _write_ledger_sheet(
         wm_ws, WORK_MASTER_HEADERS, combined_work_master,
-        sort_key=lambda k: (k[0], k[1], k[2], k[3]), recorded_date_col_idx=_WM_RECORDED_DATE_COL,
+        sort_key=lambda k: tuple(_sort_str(v) for v in k[:4]),
+        recorded_date_col_idx=_WM_RECORDED_DATE_COL,
     )
 
     summary_ws = wb.create_sheet(SUMMARY_SHEET_NAME)
