@@ -70,7 +70,7 @@ def test_work_master_keeps_both_rows_when_same_child_parent_spans_two_modules():
 def test_summary_pair_count_reflects_work_master_module_side_rows():
     """2026-09、SummaryはWork Master由来の集計に変更した（ユーザー要求）。Work
     Masterはモジュール/サイド違いの同一(Child,Parent)を別行として保持するため、
-    そこから集計するSummaryの「差分ペア総数」もモジュール違いを別ペアとして数える
+    そこから集計するSummaryの「変更図面総数」もモジュール違いを別ペアとして数える
     （test_work_master_keeps_both_rows_when_same_child_parent_spans_two_modules
     が検証するWork Master側の挙動と整合させたもの）。"""
     entry_zc00 = LedgerEntry(
@@ -87,5 +87,5 @@ def test_summary_pair_count_reflects_work_master_module_side_rows():
     summary_rows = compute_summary_rows(extract_unique_work_master_rows([entry_zc00, entry_zm00]))
 
     assert len(summary_rows) == 1
-    pair_count = summary_rows[0][7]  # 差分ペア総数（指番,差分方式の次）
+    pair_count = summary_rows[0][7]  # 変更図面総数（指番,差分方式の次）
     assert pair_count == 2  # モジュール違い（ZC00/ZM00）はWork Master上は別行のため別ペア

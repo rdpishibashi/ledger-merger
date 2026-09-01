@@ -89,6 +89,12 @@ _WM_RECORDED_DATE_COL = WORK_MASTER_HEADERS.index("Recorded Date")
 WORK_MASTER_STRING_LABELS = ("Sashiban", "Module", "Side", "Child", "Parent", "Title", "Subtitle")
 _WM_STRING_COL_INDEXES = tuple(WORK_MASTER_HEADERS.index(label) for label in WORK_MASTER_STRING_LABELS)
 
+# Work Master のユニークキー（Sashiban, Module, Side, Child, Parent）を構成する列。
+# WORK_MASTER_HEADERS の先頭5列であり、read_work_master_rows() が読み込み時に
+# 作るキーと同じ並び。
+WORK_MASTER_KEY_LABELS = ("Sashiban", "Module", "Side", "Child", "Parent")
+_WM_KEY_COL_INDEXES = tuple(WORK_MASTER_HEADERS.index(label) for label in WORK_MASTER_KEY_LABELS)
+
 # DXF-diff-manager 自身の完全新規図面（流用元なし）の表現。Work Master には
 # Relation 列が無いため、完全新規図面の判定にはこの値との比較を使う
 # （model/master_ledger.py の `parent_value = parent if parent else 'none'` 参照）。
@@ -100,12 +106,12 @@ BRAND_NEW_PARENT = "none"
 # 「差分方式」は指番の直後（Work Master の Diff Type 列をそのまま使う）。
 SUMMARY_HEADERS = (
     "指番", "差分方式", "削除図形総数", "追加図形総数", "変更図形総数", "図形総数",
-    "図形変更率 [%]", "差分ペア総数", "完全新規図面数", "日付",
+    "図形変更率 [%]", "変更図面総数", "完全新規図面数", "日付",
 )
 _SUMMARY_PERCENT_LABELS = {"図形変更率 [%]"}
 _SUMMARY_COUNT_LABELS = (
     "削除図形総数", "追加図形総数", "変更図形総数", "図形総数",
-    "差分ペア総数", "完全新規図面数",
+    "変更図面総数", "完全新規図面数",
 )
 _SUMMARY_DATE_COL = SUMMARY_HEADERS.index("日付")
 
@@ -149,6 +155,37 @@ def _normalize_work_master_row(row):
     return tuple(row)
 
 
+def _normalize_work_master_rows(rows):
+    """Work Master の辞書全体を、行の値だけでなく **キーも** 正規化して返す。
+
+    **キーの正規化を省いてはいけない（省くと重複行が出る）**: 前回の統合図面管理台帳
+    .xlsx の Work Master シートでサイドが数値として保存されていると（実データで確認:
+    237行すべての Side が int の 405）、read_work_master_rows() が作るキーは
+    `('ME24-1001-0','ZC00',405,...)`、今回分のキーは `(...,'405',...)` となり、
+    _merge_by_recorded_date() が同一行と認識できず**前回分と今回分が両方残る**
+    （2026-09、ユーザー報告: 474行中237件が重複。Summaryの集計値も倍になった）。
+    値だけを str 化しても、マージはその前に失敗しており、表示上は
+    「キー列が同一に見える重複行」になる。
+
+    キーは正規化後の行から作り直すことで、キーと値の整合を構造的に保証する。
+    正規化の結果、複数の行が同一キーへ収束した場合は "Recorded Date" が最も新しい
+    行を採用する（_merge_by_recorded_date と同じ規則）。
+
+    根拠テスト: tests/regression/bugfix/test_work_master_key_type_drift_duplicates.py
+    """
+    normalized = {}
+    for row in (rows or {}).values():
+        row = _normalize_work_master_row(row)
+        key = tuple(row[idx] for idx in _WM_KEY_COL_INDEXES)
+        existing = normalized.get(key)
+        if existing is None or (
+            _recorded_date_or_min(row[_WM_RECORDED_DATE_COL])
+            >= _recorded_date_or_min(existing[_WM_RECORDED_DATE_COL])
+        ):
+            normalized[key] = row
+    return normalized
+
+
 def extract_unique_child_parent_rows(entries):
     """LedgerEntry のリストから、"Child"-"Parent" ペアでユニーク化した
     MASTER_HEADERS 13列のデータを返す。同じペアが複数エントリにまたがる場合は
@@ -178,9 +215,9 @@ def extract_unique_child_parent_rows(entries):
     return unique
 
 
-def _extract_unique_work_master_entries(entries, key_by_module_side=False):
-    """(sashiban, child, parent) または (sashiban, module, side, child, parent) ->
-    (sashiban, module, side, diff_type, diff_list_row) の辞書を返す内部共有ヘルパー。
+def _extract_unique_work_master_entries(entries):
+    """(sashiban, module, side, child, parent) ->
+    (sashiban, module, side, diff_type, diff_list_row) の辞書を返す内部ヘルパー。
     diff_list_row は DIFF_LIST_HEADERS 12列（Relationを含む）。台帳ファイル名を主・
     出力フォルダ名を従として指番を逆算できないエントリは対象外とする
     （parse_sashiban_module_side() 参照。ミスタイプ等で台帳ファイル名の命名規則にも
@@ -190,17 +227,9 @@ def _extract_unique_work_master_entries(entries, key_by_module_side=False):
     エントリにまたがる場合は "Recorded Date" が最も新しい行を採用する
     （extract_unique_child_parent_rows と同じ規則）。
 
-    extract_unique_work_master_rows()（Work Master出力用にRelationを除いた形へ
-    変換する。key_by_module_side=True で呼ぶ）と compute_summary_rows()（Relationを
-    用いて完全新規図面数・差分ペア総数を算出する。key_by_module_side=False の既定値
-    のまま呼ぶ）の両方から使う。Work Master自体はRelationを持たないため、この中間
-    形式でRelationを保持しておく必要がある。
-
-    key_by_module_side: True にすると、同一 (指番, Child, Parent) が複数のモジュール/
-    サイドに跨る場合にそれぞれ別行として残す（Work Master側）。Summary側は
-    key_by_module_side=False（既定）のまま据え置く——含めると「差分ペア総数」が
-    DXF-diff-manager 自身の「差分抽出ペア数」の定義（グループごとの合計）とずれる
-    ため。
+    モジュール/サイドをキーに含めるため、同一 (指番, Child, Parent) が複数の
+    モジュール/サイドに跨る場合はそれぞれ別行として残る（実データで確認済みの
+    ケース。tests/regression/spec/test_work_master_module_side_columns.py 参照）。
     """
     unique = {}
     for entry in entries:
@@ -209,11 +238,7 @@ def _extract_unique_work_master_entries(entries, key_by_module_side=False):
             continue
         diff_type = parse_diff_type(entry.package_name)
         for row in entry.diff_list_rows:
-            key = (
-                (sashiban, module, side, row[CHILD_COL], row[PARENT_COL])
-                if key_by_module_side
-                else (sashiban, row[CHILD_COL], row[PARENT_COL])
-            )
+            key = (sashiban, module, side, row[CHILD_COL], row[PARENT_COL])
             existing = unique.get(key)
             if existing is None or (
                 _recorded_date_or_min(row[RECORDED_DATE_COL])
@@ -235,7 +260,7 @@ def extract_unique_work_master_rows(entries):
     """
     result = {}
     for key, (sashiban, module, side, diff_type, row) in _extract_unique_work_master_entries(
-        entries, key_by_module_side=True,
+        entries,
     ).items():
         result[key] = (
             sashiban, module, side, row[CHILD_COL], row[PARENT_COL],
@@ -308,12 +333,12 @@ def compute_summary_rows(combined_work_master):
 
     Work Masterは既に (Sashiban, Module, Side, Child, Parent) でユニーク化済み
     のため、ここでの追加のユニーク化は不要——グループ内の行数がそのまま
-    「完全新規図面数」「差分ペア総数」の内訳になる。
+    「完全新規図面数」「変更図面総数」の内訳になる。
 
     Work Master には Relation 列が無いため、完全新規図面の判定は
     DXF-diff-manager 自身の規約（流用元なしの場合 Parent="none"、
     BRAND_NEW_PARENT）を使う。「完全新規図面数」は Parent==BRAND_NEW_PARENT の
-    行の Child ユニーク数、「差分ペア総数」はそれ以外の行数。削除/追加/変更/
+    行の Child ユニーク数、「変更図面総数」はそれ以外の行数。削除/追加/変更/
     図形総数のエンティティ統計は、完全新規図面の行も含めたまま合計する
     （DXF-diff-manager 側の集計と同じ範囲）。「図形変更率 [%]」は集計後の
     合計値から再計算する（各行の変更率の平均ではない）。「日付」はグループ内の
@@ -448,16 +473,14 @@ def build_master_workbook(entries, previous_master_rows=None, previous_work_mast
     combined_master = _merge_by_recorded_date(
         previous_master_rows, extract_unique_child_parent_rows(entries), _MASTER_RECORDED_DATE_COL,
     )
+    # **マージの前に**両側のキー・値を正規化する。前回分の Side が数値で保存されて
+    # いると、正規化前のキーでは今回分と一致せず重複行になるため
+    # （_normalize_work_master_rows のdocstring参照。順序を入れ替えないこと）。
     combined_work_master = _merge_by_recorded_date(
-        previous_work_master_rows, extract_unique_work_master_rows(entries), _WM_RECORDED_DATE_COL,
+        _normalize_work_master_rows(previous_work_master_rows),
+        _normalize_work_master_rows(extract_unique_work_master_rows(entries)),
+        _WM_RECORDED_DATE_COL,
     )
-    # Sashiban/Module/Side/Child/Parent/Title/Subtitle を文字列に正規化する。前回分
-    # 由来の行（型ドリフトの可能性あり）にも適用することで、Work Masterシートと
-    # Summary集計の両方が常に健全化済みの値を参照する（_normalize_work_master_row
-    # 参照）。
-    combined_work_master = {
-        key: _normalize_work_master_row(row) for key, row in combined_work_master.items()
-    }
 
     new_summary_rows = compute_summary_rows(combined_work_master)
 

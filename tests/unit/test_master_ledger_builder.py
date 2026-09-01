@@ -305,7 +305,7 @@ def test_work_master_string_columns_heal_numeric_drift_from_previous_upload():
 # --- Summary（2026-09、Work Master集計への変更） ---
 
 def test_compute_summary_rows_values():
-    """削除/追加/変更/図形総数・変更率・差分ペア総数が定義通り算出される。
+    """削除/追加/変更/図形総数・変更率・変更図面総数が定義通り算出される。
     本テストのデータは全行 Parent='P1'/'P2'（"none"ではない）のため完全新規図面は0件
     （完全新規図面の除外・カウントの検証は
     test_compute_summary_rows_counts_brand_new_via_parent_none 参照）。
@@ -336,7 +336,7 @@ def test_compute_summary_rows_values():
 
 
 def test_compute_summary_rows_counts_brand_new_via_parent_none():
-    """Parent=="none" の行は「差分ペア総数」から除外され、代わりに「完全新規図面数」
+    """Parent=="none" の行は「変更図面総数」から除外され、代わりに「完全新規図面数」
     （Childユニーク数）としてカウントされる。Work MasterにはRelation列が無いため、
     DXF-diff-manager自身の完全新規図面の表現（Parent="none"）で判定する。
     エンティティ統計（削除/追加/変更/図形総数）は完全新規図面の行も含めたまま合計する。"""
@@ -436,7 +436,7 @@ def test_build_master_workbook_summary_is_recomputed_from_merged_work_master():
 
     rows = list(summary_ws.iter_rows(min_row=2, values_only=True))
     assert len(rows) == 1  # 同一(指番,差分方式)は1行にまとまる（追記されない）
-    pair_count_col = SUMMARY_HEADERS.index("差分ペア総数")
+    pair_count_col = SUMMARY_HEADERS.index("変更図面総数")
     assert rows[0][pair_count_col] == 2  # 前回のC_OLDと今回のC_NEWの両方を含む
 
 
@@ -447,7 +447,7 @@ def test_summary_headers_no_longer_include_removed_columns():
     assert "新規作成率 [%]" not in SUMMARY_HEADERS
     assert SUMMARY_HEADERS == (
         "指番", "差分方式", "削除図形総数", "追加図形総数", "変更図形総数", "図形総数",
-        "図形変更率 [%]", "差分ペア総数", "完全新規図面数", "日付",
+        "図形変更率 [%]", "変更図面総数", "完全新規図面数", "日付",
     )
 
 

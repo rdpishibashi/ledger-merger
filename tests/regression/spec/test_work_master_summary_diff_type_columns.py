@@ -74,7 +74,7 @@ def test_summary_headers_column_order():
     詳細は tests/unit/test_master_ledger_builder.py 参照）。"""
     assert SUMMARY_HEADERS == (
         "指番", "差分方式", "削除図形総数", "追加図形総数", "変更図形総数", "図形総数",
-        "図形変更率 [%]", "差分ペア総数", "完全新規図面数", "日付",
+        "図形変更率 [%]", "変更図面総数", "完全新規図面数", "日付",
     )
 
 

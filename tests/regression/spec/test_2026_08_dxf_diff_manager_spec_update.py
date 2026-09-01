@@ -8,7 +8,7 @@
     2. Master・Work Masterの蓄積マージは、同一キーが前回・今回の両方にある場合、
        "Recorded Date" が新しい方を採用する（今回データによる無条件上書きではない）。
        今回アップロード内で複数フォルダに同一ペアが記録されている場合も同様。
-    3. 統合図面管理台帳SummaryのParent='none'（完全新規図面）の行は「差分ペア総数」から
+    3. 統合図面管理台帳SummaryのParent='none'（完全新規図面）の行は「変更図面総数」から
        除外され、「完全新規図面数」として別集計される（tests/unit/
        test_master_ledger_builder.py::test_compute_summary_rows_counts_brand_new_via_parent_none
        で詳細に検証済み。ここでは対象外。2026-09、SummaryがWork Master由来の集計に
