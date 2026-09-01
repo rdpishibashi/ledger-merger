@@ -1,18 +1,20 @@
 """仕様確認（Spec Regression）: 統合実行結果を単一ZIP「統合図面台帳.zip」にまとめる。
 
-対応する受入条件（2026-07-28 のユーザー依頼）:
+対応する受入条件（2026-07-28 のユーザー依頼。2026-09、図形変更量詳細.xlsx削除の
+ユーザー要求を反映して更新）:
     - ダウンロードボタンは1つ（"統合台帳をダウンロード"）。
     - 出力ZIPのファイル名は固定で "統合図面台帳.zip"。
-    - ZIPの中身は次の3種類:
+    - ZIPの中身は次の2種類:
         - "指番_モジュール_サイド別集計/" フォルダ（中のファイル名は変更なし）
-        - "図形変更量詳細.xlsx"（旧「統合_図面親子管理台帳_*.xlsx」のリネーム）
         - "統合図面管理台帳.xlsx"（Master: Child-Parentペア蓄積、Work Master: 指番ごとの
-          Child-Parentペア蓄積、Summary: 指番ごとの実行時点スナップショットの追記ログ。
-          2026-07-31追加）
+          Child-Parentペア蓄積、Summary: マージ済みWork Masterを(指番,差分方式)単位で
+          再集計したスナップショット。2026-07-31追加、2026-09にSummaryの算出方法を変更）
+    - "図形変更量詳細.xlsx"（旧「統合_図面親子管理台帳_*.xlsx」のリネーム）は
+      2026-09、ユーザー要求によりコードごと削除した。ZIPには含まれない。
 
 app.py はこのバンドル処理をそのまま実行するだけの薄いView層なので、ここでは
-app.py と同じ手順（build_merged_workbook → build_master_workbook →
-build_group_workbooks → zipfile へのまとめ方）を直接再現して検証する。
+app.py と同じ手順（build_master_workbook → build_group_workbooks →
+zipfile へのまとめ方）を直接再現して検証する。
 """
 
 import io
@@ -26,7 +28,6 @@ import openpyxl
 
 from utils.group_summary_builder import build_group_workbooks
 from utils.ledger_finder import find_ledger_files
-from utils.ledger_merger import build_merged_workbook
 from utils.master_ledger_builder import build_master_workbook
 
 REAL_DATA_ROOT = os.path.join(
@@ -35,13 +36,11 @@ REAL_DATA_ROOT = os.path.join(
 
 
 def _build_bundle(entries):
-    merged_bytes = build_merged_workbook(entries)
     master_bytes = build_master_workbook(entries)
     group_files = build_group_workbooks(entries)
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("図形変更量詳細.xlsx", merged_bytes)
         zf.writestr("統合図面管理台帳.xlsx", master_bytes)
         for filename, data in sorted(group_files.items()):
             zf.writestr(f"指番_モジュール_サイド別集計/{filename}", data)
@@ -55,7 +54,7 @@ def test_bundle_contains_expected_files_with_fixed_names():
     with zipfile.ZipFile(io.BytesIO(bundle)) as zf:
         names = set(zf.namelist())
 
-    assert "図形変更量詳細.xlsx" in names
+    assert "図形変更量詳細.xlsx" not in names  # 2026-09、削除された
     assert "統合図面管理台帳.xlsx" in names
     assert "指番_モジュール_サイド別集計/ME24-1001-0_ZC00_405_all.xlsx" in names
     assert "指番_モジュール_サイド別集計/ME24-1001-0_ZMF1_405_all.xlsx" in names
@@ -120,6 +119,7 @@ def test_summary_sheet_in_bundle_has_one_row_per_sashiban_for_first_run():
     assert tuple(c.value for c in ws[1]) == SUMMARY_HEADERS
 
     rows = list(ws.iter_rows(min_row=2, values_only=True))
-    # フィクスチャは単一指番（ME24-1001-0）のため、初回実行では1行のみ
+    # フィクスチャは単一指番（ME24-1001-0）のため、Work Masterを(指番,差分方式)で
+    # 集計した結果も1行のみ
     assert len(rows) == 1
     assert rows[0][0] == "ME24-1001-0"

@@ -8,10 +8,11 @@
     2. Master・Work Masterの蓄積マージは、同一キーが前回・今回の両方にある場合、
        "Recorded Date" が新しい方を採用する（今回データによる無条件上書きではない）。
        今回アップロード内で複数フォルダに同一ペアが記録されている場合も同様。
-    3. 統合図面管理台帳SummaryのRelation='完全新規図面'の行は「差分ペア総数」から
+    3. 統合図面管理台帳SummaryのParent='none'（完全新規図面）の行は「差分ペア総数」から
        除外され、「完全新規図面数」として別集計される（tests/unit/
-       test_master_ledger_builder.py::test_compute_summary_rows_excludes_brand_new_from_pair_count
-       で詳細に検証済み。ここでは対象外）。
+       test_master_ledger_builder.py::test_compute_summary_rows_counts_brand_new_via_parent_none
+       で詳細に検証済み。ここでは対象外。2026-09、SummaryがWork Master由来の集計に
+       変わったことに伴い、判定列がRelationからParentに変わった）。
 """
 
 import io
@@ -81,9 +82,12 @@ def test_revision_omitted_group_summary_has_total_column_only():
     header = [c.value for c in summary_ws[1]]
     assert header == [None, None, "TOTAL"]  # レビジョン列は無い
 
+    # 2026-09、Summaryシートの「図面統計」セクション（完全新規図面数・流用率[%]等）は
+    # 削除されたため、「エンティティ統計」のみを確認する。
     rows_by_label = {row[1]: row[2] for row in summary_ws.iter_rows(min_row=2, values_only=True)}
-    assert rows_by_label["完全新規図面数"] == 0
-    assert rows_by_label["流用率 [%]"] == 0.2
+    assert "完全新規図面数" not in rows_by_label
+    assert "流用率 [%]" not in rows_by_label
+    assert rows_by_label["変更なし図形 総数"] == 40
 
 
 def test_master_accumulation_merge_keeps_newer_previous_row():

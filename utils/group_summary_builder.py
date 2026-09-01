@@ -54,8 +54,10 @@ LEDGER_FILENAME_PATTERN = re.compile(
 # Summaryシートの行構成（セクション見出し, 項目ラベル）。項目ラベルは DXF-diff-manager
 # 自身のSummaryシートの表記（Type A: all_in_one）をそのまま使う。Type B/C
 # （流用先図面総数/流用先図面 図形総数）の文言には対応しない（既知の制約）。
-# 「完全新規図面数」「新規作成率 [%]」は DXF-diff-manager Summaryシートの対応する
-# 2指標と同じ相対位置（差分抽出ペア数の直下・流用率[%]の直下）。
+# 2026-09、「図面統計」セクション（アップロード図面総数・差分抽出ペア数・完全新規図面数・
+# 流用率[%]・新規作成率[%]）を削除した（ユーザー要求。DXF-diff-manager自身が同時期に
+# Summaryシートから同セクションを削除しており、entry.summary_values からこれらの値を
+# 取得できなくなっていたことにも整合する）。「エンティティ統計」のみを残す。
 SUMMARY_ROWS = (
     ("エンティティ統計", "削除図形 総数"),
     (None, "追加図形 総数"),
@@ -63,15 +65,10 @@ SUMMARY_ROWS = (
     (None, "変更なし図形 総数"),
     (None, "アップロード図面 図形総数"),
     (None, "図形変更率 [%]"),
-    ("図面統計", "アップロード図面総数"),
-    (None, "差分抽出ペア数"),
-    (None, "完全新規図面数"),
-    (None, "流用率 [%]"),
-    (None, "新規作成率 [%]"),
 )
 
 # Summaryシートの項目ラベル → LedgerEntry.summary_values のキー（utils.ledger_finder の
-# SUMMARY_LABELS/OPTIONAL_SUMMARY_LABELS、Ledger-merger自身の統合Excel列名）への対応。
+# SUMMARY_LABELS、Ledger-merger自身の統合Excel列名）への対応。
 _CANONICAL_BY_DISPLAY_LABEL = {
     "削除図形 総数": "削除図形数 合計",
     "追加図形 総数": "追加図形数 合計",
@@ -79,18 +76,13 @@ _CANONICAL_BY_DISPLAY_LABEL = {
     "変更なし図形 総数": "変更なし図形数 合計",
     "アップロード図面 図形総数": "総図形数 合計",
     "図形変更率 [%]": "図形変更率 [%]",
-    "アップロード図面総数": "入力図面総数",
-    "差分抽出ペア数": "差分抽出ペア数",
-    "完全新規図面数": "完全新規図面数",
-    "流用率 [%]": "流用率 [%]",
-    "新規作成率 [%]": "新規作成率 [%]",
 }
 
 _COUNT_LABELS = (
     "削除図形 総数", "追加図形 総数", "変更（追加+削除）図形 総数", "変更なし図形 総数",
-    "アップロード図面 図形総数", "アップロード図面総数", "差分抽出ペア数", "完全新規図面数",
+    "アップロード図面 図形総数",
 )
-_PERCENT_LABELS = {"図形変更率 [%]", "流用率 [%]", "新規作成率 [%]"}
+_PERCENT_LABELS = {"図形変更率 [%]"}
 
 
 def parse_sashiban_module_side(package_name, filename=None):
@@ -225,9 +217,11 @@ def aggregate_diff_list_by_child(revision_entries):
     Child ごとに集計する。
 
     Deleted/Added/Diff/Unchanged/Total Entities の5列は全レビジョンにわたって
-    単純合計する（'n/a' の値は数値でないためスキップし、ある Child の全出現が
-    'n/a' の列はそのまま 'n/a' として残す）。非数値列（Parent/Relation/Title/
-    Subtitle/Recorded Date/Note）は、Recorded Date が最も新しい行の値を採用する。
+    単純合計する（数値でない値はスキップし、ある Child の全出現が非数値の列は
+    0として残す——2026-09、完全新規図面の 'n/a' はutils.ledger_finder側で
+    読み込み時に既に数値0へ正規化されているため実質到達しないが、防御的に
+    残している）。非数値列（Parent/Relation/Title/Subtitle/Recorded Date/Note）は、
+    Recorded Date が最も新しい行の値を採用する。
 
     Returns:
         list[tuple]（DIFF_LIST_HEADERS 12列、Childの昇順）
@@ -246,17 +240,15 @@ def aggregate_diff_list_by_child(revision_entries):
         for col_name in ENTITY_LABELS:
             col_idx = DIFF_LIST_HEADERS.index(col_name)
             numeric_values = [r[col_idx] for r in rows if isinstance(r[col_idx], (int, float))]
-            out_row[col_idx] = sum(numeric_values) if numeric_values else 'n/a'
+            out_row[col_idx] = sum(numeric_values) if numeric_values else 0
         aggregated.append(tuple(out_row))
 
     return aggregated
 
 
 def _revision_value(entry, display_label):
-    """entry.summary_values から表示ラベルに対応する値を取得する。「完全新規図面数」
-    「新規作成率 [%]」は任意ラベル（utils.ledger_finder.OPTIONAL_SUMMARY_LABELS）の
-    ため、これらを持たない旧バージョンの台帳では値が存在しない。その場合は0として
-    扱う（Summaryシートの合計・レビジョン列は常に数値で表示するため）。
+    """entry.summary_values から表示ラベルに対応する値を取得する。キーが存在しない
+    場合は0として扱う（Summaryシートの合計・レビジョン列は常に数値で表示するため）。
     """
     return entry.summary_values.get(_CANONICAL_BY_DISPLAY_LABEL[display_label], 0)
 
@@ -266,49 +258,12 @@ def _total_value(revision_entries, display_label):
         total_diff = _total_value(revision_entries, "変更（追加+削除）図形 総数")
         total_entities = _total_value(revision_entries, "アップロード図面 図形総数")
         return (total_diff / total_entities) if total_entities else 0.0
-    if display_label == "流用率 [%]":
-        total_pairs = _total_value(revision_entries, "差分抽出ペア数")
-        total_drawings = _total_value(revision_entries, "アップロード図面総数")
-        return (total_pairs / total_drawings) if total_drawings else 0.0
-    if display_label == "新規作成率 [%]":
-        total_brand_new = _total_value(revision_entries, "完全新規図面数")
-        total_drawings = _total_value(revision_entries, "アップロード図面総数")
-        return (total_brand_new / total_drawings) if total_drawings else 0.0
     return sum(_revision_value(entry, display_label) for _revision, entry in revision_entries)
-
-
-def aggregate_input_drawing_totals_by_sashiban_and_diff_type(entries):
-    """entries（今回のZIP入力から得たLedgerEntryのリスト）を指番_モジュール_サイド
-    単位でグルーピングし、各グループの「アップロード図面総数」TOTAL値
-    （指番_モジュール_サイド別集計フォルダの "{group_key}_all.xlsx" Summaryシートの
-    「アップロード図面総数」行・TOTAL列と同値。"アップロード図面総数" はカウント系
-    ラベルのため _total_value() の実体は単純合計だが、ここでは非数値・欠損値
-    （summary_values にキーが無い場合等）を安全に0として扱うため独自に集計する）を、
-    (指番, 差分方式) ごとに合算する（差分方式が同一指番内で異なる場合は別グループ
-    として分ける）。命名規則に一致しないグループは対象外。
-
-    Returns:
-        dict[(sashiban, diff_type), int|float]
-    """
-    groups = group_entries(entries)
-    totals = defaultdict(int)
-    for group_key, revision_entries in groups.items():
-        representative_entry = revision_entries[0][1]
-        sashiban, _module, _side = parse_sashiban_module_side(
-            representative_entry.package_name, representative_entry.source_path)
-        if sashiban is None:
-            continue
-        diff_type = parse_diff_type(representative_entry.package_name)
-        for _revision, entry in revision_entries:
-            value = entry.summary_values.get(_CANONICAL_BY_DISPLAY_LABEL["アップロード図面総数"])
-            if isinstance(value, (int, float)):
-                totals[(sashiban, diff_type)] += value
-    return dict(totals)
 
 
 def build_group_workbook(group_key, revision_entries):
     """1つのグループ（指番_モジュール_サイド）について、レビジョン横断の
-    Summary + Diff List を持つ統合Excel（bytes）を生成する。"""
+    Summary + Master を持つ統合Excel（bytes）を生成する。"""
     wb = Workbook()
 
     # --- Summary シート（先に追加してタブ順を先頭にする） ---
@@ -346,8 +301,10 @@ def build_group_workbook(group_key, revision_entries):
     for col_idx in range(3, 3 + 1 + revision_col_count):
         summary_ws.column_dimensions[summary_ws.cell(row=1, column=col_idx).column_letter].width = 12
 
-    # --- Diff List シート（"Diff Package"・Summary9項目列は含めない。Childごとに集計済み） ---
-    diff_ws = wb.create_sheet("Diff List")
+    # --- Master シート（"Diff Package"・Summary9項目列は含めない。Childごとに集計済み） ---
+    # 2026-09、統合図面管理台帳.xlsx側のシート名「Master」と表記を揃えるため
+    # "Diff List" から改名した（ユーザー要求）。
+    diff_ws = wb.create_sheet("Master")
     diff_ws.append(DIFF_LIST_HEADERS)
     for cell in diff_ws[1]:
         cell.font = Font(bold=True)

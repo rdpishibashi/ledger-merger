@@ -3,11 +3,10 @@
 
 対応する受入条件（2026-07-28 のユーザー依頼、添付レイアウト参照ファイル
 ME24-1001-0_ZC00_405_all.xlsx との突き合わせで確認）:
-    - Summaryシート: TOTAL列 + レビジョン列（"01","02",...）。カウント系9項目のうち
-      7項目はレビジョンごとの値をそのまま横に並べ、TOTAL列は単純合計。
-      図形変更率[%]・流用率[%]の2項目のみ、TOTAL列は単純合計ではなく
-      TOTAL(分子)/TOTAL(分母)で再計算する。
-    - Diff Listシート: Diff Package列・9項目合計列は含めない。同一Childが複数
+    - Summaryシート: TOTAL列 + レビジョン列（"01","02",...）。カウント系5項目は
+      レビジョンごとの値をそのまま横に並べ、TOTAL列は単純合計。図形変更率[%]の
+      み、TOTAL列は単純合計ではなく TOTAL(分子)/TOTAL(分母)で再計算する。
+    - Masterシート: Diff Package列・9項目合計列は含めない。同一Childが複数
       レビジョンにまたがる場合、Deleted/Added/Diff/Unchanged/Total Entitiesの
       5列は単純合計する。
     - 同一出力フォルダに複数の有効な台帳がある場合（実データで確認済みのケース）、
@@ -18,12 +17,10 @@ ME24-1001-0_ZC00_405_all.xlsx との突き合わせで確認）:
 （tests/fixtures/dxf_diff_manager_output/dxf_diff_results_TypeA_ME24-1001-0_ZC00_405_01〜04
 が、その参照ファイルの生成元となった実データそのもの）。
 
-2026-08、DXF-diff-manager Summaryシートに追加された「完全新規図面数」「新規作成率 [%]」
-（差分抽出ペア数の直下・流用率[%]の直下）の2行を EXPECTED_SUMMARY_ROWS に追加した。
-上記の参照ファイル（この2指標が追加される前のもの）にこの2行は存在しないため、
-このフィクスチャ（旧形式の台帳）から算出される値は全レビジョン・TOTALとも0になる
-（utils.ledger_finder.OPTIONAL_SUMMARY_LABELS が無い旧形式台帳の既定値。参照ファイル
-自体の値は変更していない）。
+2026-09、ユーザー要求によりSummaryシートの「図面統計」セクション（アップロード
+図面総数・差分抽出ペア数・完全新規図面数・流用率[%]・新規作成率[%]）を削除した。
+参照ファイル自体にはこのセクションが含まれるが、EXPECTED_SUMMARY_ROWSからは
+削除後の現仕様に合わせて対応する行を除いている（「エンティティ統計」6行のみ検証）。
 """
 
 import io
@@ -53,12 +50,6 @@ EXPECTED_SUMMARY_ROWS = [
     (None, "アップロード図面 図形総数", 79875, 34902, 7521, 23553, 13899),
     (None, "図形変更率 [%]", 0.01129264475743349, 0.007793249670505988, 0.0648849886983114,
      0.0011888082197596909, 0.008202028922944096),
-    ("図面統計", "アップロード図面総数", 113, 31, 29, 27, 26),
-    (None, "差分抽出ペア数", 9, 4, 2, 2, 1),
-    (None, "完全新規図面数", 0, 0, 0, 0, 0),  # 旧形式フィクスチャは新指標を持たないため0
-    (None, "流用率 [%]", 0.07964601769911504, 0.12903225806451613, 0.06896551724137931,
-     0.07407407407407407, 0.038461538461538464),
-    (None, "新規作成率 [%]", 0.0, 0.0, 0.0, 0.0, 0.0),  # 同上
 ]
 
 
@@ -81,12 +72,12 @@ def test_group_summary_matches_user_provided_reference_file():
 
 
 def test_group_summary_diff_list_excludes_diff_package_and_total_columns():
-    """"Diff Package" 列・合計欄（9項目）は Diff List シートに含まれない。"""
+    """"Diff Package" 列・合計欄（9項目）は Master シートに含まれない。"""
     entries, _missing = find_ledger_files(REAL_DATA_ROOT)
     files = build_group_workbooks(entries)
 
     wb = openpyxl.load_workbook(io.BytesIO(files["ME24-1001-0_ZC00_405_all.xlsx"]))
-    header = [c.value for c in wb["Diff List"][1]]
+    header = [c.value for c in wb["Master"][1]]
 
     assert "Diff Package" not in header
     assert len(header) == 12
