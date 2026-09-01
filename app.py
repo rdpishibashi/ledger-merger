@@ -137,6 +137,19 @@ if run:
             for entry in unresolved_sashiban_entries
         ]
 
+        # DXF-diff-manager が 2026-09 に Summary シートの「図面統計」欄
+        # （入力図面総数・差分抽出ペア数・流用率 [%] 等）を削除したため、新形式の
+        # 台帳ではこれらの値を summary_values から取得できない（欠損時は0として
+        # 集計される。utils/ledger_finder.py の OPTIONAL_SUMMARY_LABELS 参照）。
+        # 黙って0扱いにするのではなく、対象の台帳ファイルをユーザーに明示する。
+        entries_missing_drawing_stats = [
+            entry for entry in all_entries if "入力図面総数" not in entry.summary_values
+        ]
+        missing_drawing_stats_names = [
+            f"{entry.package_name} / {os.path.basename(entry.source_path)}"
+            for entry in entries_missing_drawing_stats
+        ]
+
         final_zip_buffer = io.BytesIO()
         with zipfile.ZipFile(final_zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("図形変更量詳細.xlsx", merged_bytes)
@@ -149,6 +162,7 @@ if run:
         st.session_state["merged_count"] = len(all_entries)
         st.session_state["merged_missing_folders"] = all_missing_folders
         st.session_state["merged_unresolved_sashiban"] = unresolved_sashiban_names
+        st.session_state["merged_missing_drawing_stats"] = missing_drawing_stats_names
         st.session_state["group_summary_count"] = len(group_files)
         st.session_state["downloaded_once"] = False
         st.session_state["zip_uploader_version"] = zip_uploader_version + 1
@@ -174,6 +188,19 @@ if "final_zip_bytes" in st.session_state:
                 "からは除外されます。"
             )
             for name in unresolved_sashiban:
+                st.write(f"- {name}")
+    missing_drawing_stats = st.session_state.get("merged_missing_drawing_stats") or []
+    if missing_drawing_stats:
+        with st.expander(f"⚠️ 図面統計を持たない台帳ファイル（{len(missing_drawing_stats)}件）"):
+            st.caption(
+                "DXF-diff-manager の Summary シートに「図面統計」（入力図面総数・"
+                "差分抽出ペア数・流用率 [%] 等）が含まれていませんでした"
+                "（2026-09 以降のDXF-diff-managerの出力、または古いバージョンとの"
+                "混在が原因の可能性があります）。これらの台帳が属する指番の"
+                "「指番図面総数」「流用率 [%]」「新規作成率 [%]」は 0 として"
+                "集計されます。"
+            )
+            for name in missing_drawing_stats:
                 st.write(f"- {name}")
     download_done = st.session_state.get("downloaded_once", False)
     downloaded = st.download_button(
