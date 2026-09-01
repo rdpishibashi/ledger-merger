@@ -62,8 +62,10 @@ def _row(child, parent, relation, recorded_date, deleted=1, added=2, diff=3, unc
 
 
 def test_work_master_headers_column_order():
+    """2026-09、"Relation" を Parent の直後に追加した（Master と同じ位置。
+    tests/regression/spec/test_revup_supersedes_reuse_in_work_master.py 参照）。"""
     assert WORK_MASTER_HEADERS == (
-        "Sashiban", "Module", "Side", "Child", "Parent", "Title", "Subtitle", "Diff Type",
+        "Sashiban", "Module", "Side", "Child", "Parent", "Relation", "Title", "Subtitle", "Diff Type",
         "Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities",
         "Total Entities", "Note", "Recorded Date",
     )
@@ -89,7 +91,7 @@ def test_work_master_row_has_diff_type_and_moved_note_recorded_date():
 
     assert dict(zip(WORK_MASTER_HEADERS, row)) == {
         "Sashiban": "ME24-1001-0", "Module": "ZC00", "Side": "405", "Child": "C1", "Parent": "P1",
-        "Title": "T", "Subtitle": "S", "Diff Type": "A",
+        "Relation": "RevUp", "Title": "T", "Subtitle": "S", "Diff Type": "A",
         "Deleted Entities": 1, "Added Entities": 2, "Diff Entities": 3, "Unchanged Entities": 4,
         "Total Entities": 5, "Note": "メモ", "Recorded Date": datetime(2026, 8, 5),
     }

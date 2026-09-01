@@ -56,7 +56,7 @@ def _previous_rows_with_numeric_side(recorded_date, deleted):
     """サイドが数値（int）で保存された前回のWork Master行を再現する
     （read_work_master_rows() がセルの生値からキーを作るのと同じ形）。"""
     row = (
-        "ME24-1001-0", "ZC00", 405, "C1", "P1", "T", "S", "A",
+        "ME24-1001-0", "ZC00", 405, "C1", "P1", "RevUp", "T", "S", "A",
         deleted, 2, 3, 4, 5, None, recorded_date,
     )
     return {("ME24-1001-0", "ZC00", 405, "C1", "P1"): row}

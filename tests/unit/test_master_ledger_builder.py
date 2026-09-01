@@ -161,10 +161,10 @@ def test_extract_unique_work_master_rows_dedupes_and_excludes_unresolvable_sashi
     }
 
 
-def test_extract_unique_work_master_rows_excludes_relation_and_includes_sashiban():
-    """列順は Sashiban, Module, Side, Child, Parent, Title, Subtitle, Diff Type,
-    Deleted/Added/Diff/Unchanged/Total Entities, Note, Recorded Date（2026-08、
-    Diff Type追加とNote/Recorded Dateの末尾移動後の構成）。Diff Type は
+def test_extract_unique_work_master_rows_includes_relation_and_sashiban():
+    """列順は Sashiban, Module, Side, Child, Parent, Relation, Title, Subtitle,
+    Diff Type, Deleted/Added/Diff/Unchanged/Total Entities, Note, Recorded Date。
+    Relation は 2026-09 に追加（元の Diff List 行の値をそのまま持つ）。Diff Type は
     package_name（"dxf_diff_results_TypeA_..."）の "A" が入る。"""
     entry = LedgerEntry(
         package_name=_MATCHING_PACKAGE_NAME, source_path="a.xlsx",
@@ -176,9 +176,10 @@ def test_extract_unique_work_master_rows_excludes_relation_and_includes_sashiban
     row = unique[("ME24-1001-0", "ZC00", "405", "C1", "P1")]
 
     assert row == (
-        "ME24-1001-0", "ZC00", "405", "C1", "P1", "T", "S", "A", 10, 20, 30, 40, 50, None, datetime(2026, 7, 1),
+        "ME24-1001-0", "ZC00", "405", "C1", "P1", "RevUp", "T", "S", "A", 10, 20, 30, 40, 50, None,
+        datetime(2026, 7, 1),
     )
-    assert "RevUp" not in row  # Relation列は含まれない
+    assert dict(zip(WORK_MASTER_HEADERS, row))["Relation"] == "RevUp"
 
 
 def test_build_master_workbook_work_master_populated_for_matching_package_names():
@@ -228,10 +229,12 @@ def test_build_master_workbook_work_master_overwrites_matching_key_and_keeps_oth
     wb = openpyxl.load_workbook(io.BytesIO(merged_bytes))
     wm_ws = wb[WORK_MASTER_SHEET_NAME]
 
-    rows_by_child = {row[3]: row for row in wm_ws.iter_rows(min_row=2, values_only=True)}
+    child_col = WORK_MASTER_HEADERS.index("Child")
+    deleted_col = WORK_MASTER_HEADERS.index("Deleted Entities")
+    rows_by_child = {row[child_col]: row for row in wm_ws.iter_rows(min_row=2, values_only=True)}
     assert set(rows_by_child.keys()) == {"C1", "C_OLD_ONLY"}
-    assert rows_by_child["C1"][8] == 1  # 上書きされた新しい値（Deleted Entities）
-    assert rows_by_child["C_OLD_ONLY"][8] == 999  # 旧データがそのまま保持される
+    assert rows_by_child["C1"][deleted_col] == 1  # 上書きされた新しい値（Deleted Entities）
+    assert rows_by_child["C_OLD_ONLY"][deleted_col] == 999  # 旧データがそのまま保持される
 
 
 def test_read_work_master_rows_returns_none_when_sheet_missing():
@@ -286,7 +289,7 @@ def test_work_master_string_columns_heal_numeric_drift_from_previous_upload():
     今回の出力では文字列に正規化される（前回分のみで新規データが無い場合も含む）。"""
     previous_work_master_rows = {
         ("ME24-1001-0", "ZC00", 405, "C_OLD", "P_OLD"): (
-            "ME24-1001-0", "ZC00", 405, "C_OLD", "P_OLD", "T", "S", "A",
+            "ME24-1001-0", "ZC00", 405, "C_OLD", "P_OLD", "RevUp", "T", "S", "A",
             1, 2, 3, 4, 5, None, datetime(2026, 7, 1),
         ),
     }
@@ -399,10 +402,10 @@ def test_compute_summary_rows_date_is_max_recorded_date_in_group():
     """「日付」はグループ内のRecorded Dateの最大値になる（実行時刻ではない）。"""
     work_master = {
         ("S1", "M1", "SD1", "C1", "P1"): (
-            "S1", "M1", "SD1", "C1", "P1", "T", "S", "A", 1, 1, 2, 1, 3, None, datetime(2026, 7, 1),
+            "S1", "M1", "SD1", "C1", "P1", "RevUp", "T", "S", "A", 1, 1, 2, 1, 3, None, datetime(2026, 7, 1),
         ),
         ("S1", "M1", "SD1", "C2", "P2"): (
-            "S1", "M1", "SD1", "C2", "P2", "T", "S", "A", 1, 1, 2, 1, 3, None, datetime(2026, 7, 20),
+            "S1", "M1", "SD1", "C2", "P2", "RevUp", "T", "S", "A", 1, 1, 2, 1, 3, None, datetime(2026, 7, 20),
         ),
     }
 

@@ -19,11 +19,16 @@
       のみ流用を落とす（実データでの削除件数: 指番横断=23行、指番内=13行）。
     - 完全新規図面（Parent="none"）の行は削除対象にしない。規則の対象は流用のみで、
       Drawing-genealogy も Relation が '流用' の行だけを落とす。
-    - Master シートには適用しない。Master は Relation 列を持つ関係の記録そのもの
-      であり、かつこの判定に使う Relation の参照元でもあるため。
-    - Work Master は Relation 列を持たないため、判定にはマージ済み Master の
-      Relation を (Child, Parent) で引く。これにより、前回台帳から引き継いだ
-      （＝この規則が無かった頃に書かれた）流用の行も、次回の統合時に間引かれる。
+    - Master シートにも同じ規則を適用する（2026-09-01、ユーザー追加要求）。ただし
+      判定単位は **Child のみ**——Master は指番の列を持たないため、これが唯一の単位
+      （Drawing-genealogy が台帳全体を Child 単位で見るのと同じ）。結果として
+      Master の方が Work Master より広く間引かれる（実データ: Master 174→161行、
+      Work Master 237→224行）。
+    - Work Master にも Relation 列を追加した（2026-09-01、ユーザー要求）。値は元の
+      Diff List 行（＝Masterと同じ）の Relation。旧形式（Relation列なしの15列）で
+      アップロードされた台帳は Master の Relation で補完する。これにより、前回台帳
+      から引き継いだ（＝この規則が無かった頃に書かれた）流用の行も、次回の統合時に
+      間引かれる。
 """
 
 import io
@@ -37,9 +42,11 @@ import openpyxl
 
 from utils.ledger_finder import LedgerEntry
 from utils.master_ledger_builder import (
+    LEGACY_WORK_MASTER_HEADERS,
     MASTER_SHEET_NAME,
     SUMMARY_HEADERS,
     SUMMARY_SHEET_NAME,
+    WORK_MASTER_HEADERS,
     WORK_MASTER_SHEET_NAME,
     build_master_workbook,
     read_master_rows,
@@ -129,8 +136,9 @@ def test_brand_new_row_is_not_dropped_by_revup():
     }
 
 
-def test_master_sheet_keeps_both_relations():
-    """Master は関係の記録そのものなので、流用の行も残す（Work Masterのみ間引く）。"""
+def test_master_sheet_also_drops_reuse_row():
+    """Master にも同じ規則を適用する（2026-09-01、ユーザー追加要求）。判定単位は
+    Child のみ——Master は指番の列を持たないため。"""
     entry = LedgerEntry(
         package_name=_PACKAGE, source_path="NE24-0062-0_ZM00_405.xlsx",
         diff_list_rows=[
@@ -143,10 +151,84 @@ def test_master_sheet_keeps_both_relations():
     wb = openpyxl.load_workbook(io.BytesIO(build_master_workbook([entry])))
     master_keys = [(r[0], r[1]) for r in wb[MASTER_SHEET_NAME].iter_rows(min_row=2, values_only=True)]
 
-    assert set(master_keys) == {
-        ("EE3273-608-32B", "EE3273-608-32A"),
-        ("EE3273-608-32B", "EE3273-608-24B"),
+    assert master_keys == [("EE3273-608-32B", "EE3273-608-32A")]
+
+
+def test_master_keeps_reuse_row_when_child_has_no_revup():
+    """RevUp が無ければ Master でも流用の行は残る。"""
+    entry = LedgerEntry(
+        package_name=_PACKAGE, source_path="NE24-0062-0_ZM00_405.xlsx",
+        diff_list_rows=[_row("EE3273-608-32B", "EE3273-608-24B", "流用", datetime(2026, 8, 1))],
+        summary_values={},
+    )
+
+    wb = openpyxl.load_workbook(io.BytesIO(build_master_workbook([entry])))
+    master_keys = [(r[0], r[1]) for r in wb[MASTER_SHEET_NAME].iter_rows(min_row=2, values_only=True)]
+
+    assert master_keys == [("EE3273-608-32B", "EE3273-608-24B")]
+
+
+def test_work_master_has_relation_column_matching_master():
+    """Work Master に Relation 列を追加した（2026-09-01、ユーザー要求）。値は元の
+    Diff List 行（＝Masterと同じ）の Relation。"""
+    entry = LedgerEntry(
+        package_name=_PACKAGE, source_path="NE24-0062-0_ZM00_405.xlsx",
+        diff_list_rows=[
+            _row("EE3273-608-32B", "EE3273-608-32A", "RevUp", datetime(2026, 8, 1)),
+            _row("EE5526-405-16B", "none", "完全新規図面", datetime(2026, 8, 1)),
+        ],
+        summary_values={},
+    )
+
+    wb = openpyxl.load_workbook(io.BytesIO(build_master_workbook([entry])))
+    ws = wb[WORK_MASTER_SHEET_NAME]
+    assert tuple(c.value for c in ws[1]) == WORK_MASTER_HEADERS
+
+    relation_by_child = {
+        row[WORK_MASTER_HEADERS.index("Child")]: row[WORK_MASTER_HEADERS.index("Relation")]
+        for row in ws.iter_rows(min_row=2, values_only=True)
     }
+    assert relation_by_child == {"EE3273-608-32B": "RevUp", "EE5526-405-16B": "完全新規図面"}
+
+
+def test_legacy_work_master_without_relation_column_is_read_and_backfilled():
+    """Relation列が無い旧形式（15列）の台帳をアップロードしても、前回分を捨てずに
+    読み込み、Relation を Master から補完する。
+
+    列を増やしたときに旧形式を弾くと、蓄積済みのWork Masterが警告も無く丸ごと
+    捨てられる（Work Master は読み込み失敗時に警告を出さない仕様のため）。
+    """
+    legacy_wb = openpyxl.Workbook()
+    ws = legacy_wb.active
+    ws.title = WORK_MASTER_SHEET_NAME
+    ws.append(LEGACY_WORK_MASTER_HEADERS)
+    ws.append([
+        "NE24-0062-0", "ZM00", "405", "EE3273-608-32B", "EE3273-608-24B",
+        "T", "S", "A", 1, 2, 3, 4, 5, None, datetime(2026, 8, 1),
+    ])
+    buf = io.BytesIO()
+    legacy_wb.save(buf)
+
+    legacy_rows = read_work_master_rows(buf.getvalue())
+    assert legacy_rows is not None, "旧形式が読めないと前回分が黙って失われる"
+    assert len(legacy_rows) == 1
+    assert legacy_rows[("NE24-0062-0", "ZM00", "405", "EE3273-608-32B", "EE3273-608-24B")][
+        WORK_MASTER_HEADERS.index("Relation")
+    ] is None  # 読み込み時点では空
+
+    # Master 側に 流用 の記録があるので、次回出力では Relation が埋まる
+    entry = LedgerEntry(
+        package_name=_PACKAGE, source_path="NE24-0062-0_ZM00_405.xlsx",
+        diff_list_rows=[_row("EE3273-608-32B", "EE3273-608-24B", "流用", datetime(2026, 7, 1))],
+        summary_values={},
+    )
+    wb = openpyxl.load_workbook(io.BytesIO(
+        build_master_workbook([entry], previous_work_master_rows=legacy_rows)
+    ))
+    rows = list(wb[WORK_MASTER_SHEET_NAME].iter_rows(min_row=2, values_only=True))
+
+    assert len(rows) == 1
+    assert rows[0][WORK_MASTER_HEADERS.index("Relation")] == "流用"
 
 
 def test_legacy_reuse_row_from_previous_ledger_is_dropped_on_next_merge():

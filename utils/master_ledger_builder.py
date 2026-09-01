@@ -76,14 +76,20 @@ REVUP_RELATION = "RevUp"
 REUSE_RELATION = "流用"
 
 # Work Master の列構成。Master と異なり Sashiban・Module・Side を Child の前に持つ。
+# "Relation" は 2026-09 に追加（ユーザー要求）。Master と同じく Parent の直後に置く。
+# 旧形式（Relation列なしの15列）でアップロードされた台帳も読めるようにしてある
+# （read_work_master_rows 参照。黙って前回分を捨てないため）。
 WORK_MASTER_HEADERS = (
-    "Sashiban", "Module", "Side", "Child", "Parent", "Title", "Subtitle", "Diff Type",
+    "Sashiban", "Module", "Side", "Child", "Parent", "Relation", "Title", "Subtitle", "Diff Type",
     "Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities",
     "Total Entities", "Note", "Recorded Date",
 )
+# Relation列を追加する前の列構成（2026-09以前にダウンロードされた台帳）。
+LEGACY_WORK_MASTER_HEADERS = tuple(h for h in WORK_MASTER_HEADERS if h != "Relation")
 _WM_SASHIBAN_COL = WORK_MASTER_HEADERS.index("Sashiban")
 _WM_CHILD_COL = WORK_MASTER_HEADERS.index("Child")
 _WM_PARENT_COL = WORK_MASTER_HEADERS.index("Parent")
+_WM_RELATION_COL = WORK_MASTER_HEADERS.index("Relation")
 _WM_DIFF_TYPE_COL = WORK_MASTER_HEADERS.index("Diff Type")
 _WM_DELETED_COL = WORK_MASTER_HEADERS.index("Deleted Entities")
 _WM_ADDED_COL = WORK_MASTER_HEADERS.index("Added Entities")
@@ -197,11 +203,10 @@ def _normalize_work_master_rows(rows):
 def _relation_lookup(master_rows):
     """Master の行（Relation列を持つ）から (child, parent) -> Relation の辞書を作る。
 
-    Work Master は Relation 列を持たないため、「RevUpと流用の両方がある図面は
-    RevUpを採用する」規則（_drop_reuse_rows_superseded_by_revup）の判定には
-    Master 側の Relation を参照する。Master は前回分・今回分をマージ済みで、かつ
-    Work Master より対象が広い（指番を逆算できないエントリも含む）ため、Work Master
-    の全行に対応する Relation を引ける。
+    旧形式（Relation列が無い15列）でアップロードされた Work Master 行の Relation を
+    補完するために使う（_backfill_work_master_relation 参照）。Master は前回分・
+    今回分をマージ済みで、かつ Work Master より対象が広い（指番を逆算できない
+    エントリも含む）ため、Work Master の全行に対応する Relation を引ける。
 
     キーは Work Master 側（正規化済みで必ず str）と突き合わせるため、Master 側も
     同じ規則で str 化する（型ドリフト対策。_normalize_work_master_rows 参照）。
@@ -214,18 +219,38 @@ def _relation_lookup(master_rows):
     return lookup
 
 
-def _drop_reuse_rows_superseded_by_revup(work_master, relation_by_child_parent):
-    """同じ図面に「RevUp」と「流用」の両方の関係がある場合、Work Master では
-    「流用」の行を落として「RevUp」の行だけを残す（2026-09、ユーザー要求。
-    Drawing-genealogy の GraphBuilder._reuse_pairs_to_delete() と同じ考え方）。
+def _backfill_work_master_relation(work_master, relation_by_child_parent):
+    """Relation が空の Work Master 行（旧形式の台帳から読み込んだ行）を、Master の
+    Relation で埋める。
 
-    判定の単位は **(Sashiban, Module, Side, Child)**。同じ指番・モジュール・サイドの
-    中で当該 Child に RevUp の行が実在する場合にのみ、その Child の流用の行を落とす。
-    Child だけで全体横断に判定すると、**その指番には RevUp が記録されていないのに
-    他の指番の RevUp を根拠に唯一の関係行が消える**（実データ検証: 指番
-    PE25-9601-0 の10行が、別指番 NE24-0062-0 の RevUp を理由に削除され、
-    PE25-9601-0 ではその図面の流用元が一切たどれなくなる）。Work Master は指番ごとの
-    作業台帳のため、指番をまたいだ削除はしない。
+    これにより、Relation列が無かった頃にダウンロードされた台帳を再アップロードして
+    も、次回の出力では Relation が入り、RevUp/流用の判定
+    （_drop_reuse_rows_superseded_by_revup）も前回分に遡って効く。Master に該当
+    ペアが無い場合は空のままにする（判定対象外として素通しする＝消さない）。
+    """
+    filled = {}
+    for key, row in work_master.items():
+        if row[_WM_RELATION_COL] is None:
+            relation = relation_by_child_parent.get((row[_WM_CHILD_COL], row[_WM_PARENT_COL]))
+            row = row[:_WM_RELATION_COL] + (relation,) + row[_WM_RELATION_COL + 1:]
+        filled[key] = row
+    return filled
+
+
+def _drop_reuse_rows_superseded_by_revup(rows, relation_col_idx, group_key):
+    """同じ図面に「RevUp」と「流用」の両方の関係がある場合、「流用」の行を落として
+    「RevUp」の行だけを残す（2026-09、ユーザー要求。Drawing-genealogy の
+    GraphBuilder._reuse_pairs_to_delete() と同じ考え方）。Master・Work Master の
+    両方に適用する。
+
+    group_key: 「同じ図面」をどの単位で見るかを決める関数（キー -> グループ）。
+        - Master: Child のみ（指番の列を持たないシートのため、これが唯一の単位。
+          Drawing-genealogy が台帳全体を Child 単位で見るのと同じ）。
+        - Work Master: (Sashiban, Module, Side, Child)。**指番をまたいで判定しない**——
+          その指番には RevUp が記録されていないのに他の指番の RevUp を根拠に唯一の
+          関係行が消えるのを避けるため（実データ検証: 指番横断で判定すると指番
+          PE25-9601-0 の10行が別指番 NE24-0062-0 の RevUp を理由に削除され、
+          PE25-9601-0 ではその図面の流用元が一切たどれなくなる）。
 
     Drawing-genealogy との違い: あちらは図番の版数から RevUp エッジを**推測**もするが
     （_infer_revision_up_edges）、ここでは台帳に実在する Relation のみで判定する
@@ -233,19 +258,16 @@ def _drop_reuse_rows_superseded_by_revup(work_master, relation_by_child_parent):
     完全新規図面（Parent="none"）の行は削除対象にしない（規則の対象は流用のみ）。
 
     Returns:
-        (filtered_work_master, dropped_keys)
+        (filtered_rows, dropped_keys)
     """
     revup_groups = {
-        key[:4] for key, row in work_master.items()
-        if relation_by_child_parent.get((row[_WM_CHILD_COL], row[_WM_PARENT_COL])) == REVUP_RELATION
+        group_key(key) for key, row in rows.items() if row[relation_col_idx] == REVUP_RELATION
     }
-    dropped = [
-        key for key, row in work_master.items()
-        if relation_by_child_parent.get((row[_WM_CHILD_COL], row[_WM_PARENT_COL])) == REUSE_RELATION
-        and key[:4] in revup_groups
-    ]
-    filtered = {key: row for key, row in work_master.items() if key not in set(dropped)}
-    return filtered, dropped
+    dropped = {
+        key for key, row in rows.items()
+        if row[relation_col_idx] == REUSE_RELATION and group_key(key) in revup_groups
+    }
+    return {key: row for key, row in rows.items() if key not in dropped}, dropped
 
 
 def extract_unique_child_parent_rows(entries):
@@ -312,10 +334,13 @@ def _extract_unique_work_master_entries(entries):
 
 def extract_unique_work_master_rows(entries):
     """LedgerEntry のリストから、指番・モジュール・サイドごとに "Child"-"Parent"
-    ペアでユニーク化した WORK_MASTER_HEADERS 15列のデータを返す。Diff Package
+    ペアでユニーク化した WORK_MASTER_HEADERS 16列のデータを返す。Diff Package
     （出力フォルダ名）から指番を逆算できないエントリは対象外とする。同じキーが
     複数エントリにまたがる場合は "Recorded Date" が最も新しい行を採用する
     （_extract_unique_work_master_entries 参照）。
+
+    Relation は元の Diff List 行の値をそのまま持たせる（2026-09追加。Master と
+    同じ値。RevUp/流用の判定にも使う）。
 
     Returns:
         dict[(sashiban, module, side, child, parent), tuple]
@@ -325,7 +350,7 @@ def extract_unique_work_master_rows(entries):
         entries,
     ).items():
         result[key] = (
-            sashiban, module, side, row[CHILD_COL], row[PARENT_COL],
+            sashiban, module, side, row[CHILD_COL], row[PARENT_COL], row[RELATION_COL],
             row[TITLE_COL], row[SUBTITLE_COL], diff_type,
             row[DELETED_COL], row[ADDED_COL], row[DIFF_COL], row[UNCHANGED_COL], row[TOTAL_COL],
             row[NOTE_COL], row[RECORDED_DATE_COL],
@@ -360,6 +385,11 @@ def read_work_master_rows(file_bytes):
     (sashiban, module, side, child, parent) をキーとする行の辞書を読み込む。
     シートが存在しない・構成が想定と異なる場合は None を返す（呼び出し側は今回分
     のみで新規作成する。Masterと異なりこの場合は警告を出さない）。
+
+    **旧形式（Relation列が無い15列。2026-09以前にダウンロードされた台帳）も受け付け、
+    Relation を None として現行の16列形へ変換する**（Relation は呼び出し側が Master
+    から補完する。_backfill_work_master_relation 参照）。列を増やした際に旧形式を
+    弾いてしまうと、蓄積済みのWork Masterが警告も無く丸ごと捨てられるため。
     """
     try:
         wb = load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
@@ -371,9 +401,19 @@ def read_work_master_rows(file_bytes):
             return None
         ws = wb[WORK_MASTER_SHEET_NAME]
         rows = list(ws.iter_rows(values_only=True))
-        if not rows or tuple(rows[0]) != WORK_MASTER_HEADERS:
+        if not rows:
             return None
-        return {(row[0], row[1], row[2], row[3], row[4]): tuple(row) for row in rows[1:]}
+        header = tuple(rows[0])
+        if header == WORK_MASTER_HEADERS:
+            data_rows = [tuple(row) for row in rows[1:]]
+        elif header == LEGACY_WORK_MASTER_HEADERS:
+            data_rows = [
+                tuple(row[:_WM_RELATION_COL]) + (None,) + tuple(row[_WM_RELATION_COL:])
+                for row in rows[1:]
+            ]
+        else:
+            return None
+        return {tuple(row[idx] for idx in _WM_KEY_COL_INDEXES): row for row in data_rows}
     finally:
         wb.close()
 
@@ -532,10 +572,10 @@ def build_master_workbook(entries, previous_master_rows=None, previous_work_mast
     （compute_summary_rows 参照。Work Master自体が累積済みのため、再集計しても
     履歴は失われない）。
 
-    Work Master のみ、同じ図面に「RevUp」と「流用」の両方の関係がある場合は流用の行を
-    落とす（_drop_reuse_rows_superseded_by_revup 参照）。Master は関係の記録そのもの
-    （Relation列を持つ全件の台帳）なので、この間引きは行わない——判定に使う Relation の
-    参照元でもあるため。
+    同じ図面に「RevUp」と「流用」の両方の関係がある場合は流用の行を落とす
+    （_drop_reuse_rows_superseded_by_revup 参照）。Master・Work Master の両方に適用し、
+    判定単位だけが異なる（Master は Child のみ、Work Master は指番・モジュール・
+    サイドも含む）。
     """
     combined_master = _merge_by_recorded_date(
         previous_master_rows, extract_unique_child_parent_rows(entries), _MASTER_RECORDED_DATE_COL,
@@ -548,10 +588,22 @@ def build_master_workbook(entries, previous_master_rows=None, previous_work_mast
         _normalize_work_master_rows(extract_unique_work_master_rows(entries)),
         _WM_RECORDED_DATE_COL,
     )
+    # 旧形式（Relation列なし）の台帳から来た行の Relation を Master から補完する。
+    # **間引きより前に**行うこと（Relationが空のままだと判定対象外になり、前回分の
+    # 流用の行が残ってしまう）。参照元は間引き前の Master（間引き後だと落とした
+    # 流用ペアを引けなくなる）。
+    combined_work_master = _backfill_work_master_relation(
+        combined_work_master, _relation_lookup(combined_master),
+    )
     # RevUpと流用が両方ある図面は流用を落とす。Summaryは間引き後のWork Masterから
     # 集計する（Work Masterの見た目と集計値を一致させるため）。
-    combined_work_master, _dropped = _drop_reuse_rows_superseded_by_revup(
-        combined_work_master, _relation_lookup(combined_master),
+    combined_work_master, _dropped_work_master = _drop_reuse_rows_superseded_by_revup(
+        combined_work_master, _WM_RELATION_COL, group_key=lambda key: key[:4],
+    )
+    # Master は指番の列を持たないため、判定単位は Child のみ（Drawing-genealogy が
+    # 台帳全体を Child 単位で見るのと同じ）。
+    combined_master, _dropped_master = _drop_reuse_rows_superseded_by_revup(
+        combined_master, _MASTER_RELATION_COL, group_key=lambda key: key[0],
     )
 
     new_summary_rows = compute_summary_rows(combined_work_master)
