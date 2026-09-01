@@ -23,6 +23,14 @@
 from streamlit.testing.v1 import AppTest
 
 
+# 手動アップロード欄のキャプションを識別する文字列。ZIPアップローダ側のキャプション
+# にも「アップロードしてください」が含まれるため、"統合図面管理台帳.xlsx" まで含めた
+# 部分文字列で判定する（2026-09-02、文言変更にテストが追随できていなかったのを修正。
+# 2026-08-29 のコミット 311adf1 で冒頭の「前回ダウンロードした」が削られていたが、
+# 本テストが旧文言のままだったため失敗し続けていた）。
+_MANUAL_UPLOADER_CAPTION = "統合図面管理台帳.xlsxをアップロード"
+
+
 def _run(**session_state_overrides):
     at = AppTest.from_file("app.py", default_timeout=10)
     for key, value in session_state_overrides.items():
@@ -61,10 +69,10 @@ def test_use_last_master_hides_manual_uploader_and_shows_escape_hatch():
     assert "別のファイルをアップロードし直す" in [b.label for b in at.button]
     # 手動アップロード用のキャプションは表示されない
     caption_texts = [c.value for c in at.caption]
-    assert not any("前回ダウンロードした統合図面管理台帳.xlsx" in t for t in caption_texts)
+    assert not any(_MANUAL_UPLOADER_CAPTION in t for t in caption_texts)
 
 
 def test_without_use_last_master_shows_manual_uploader_caption():
     at = _run()
     caption_texts = [c.value for c in at.caption]
-    assert any("前回ダウンロードした統合図面管理台帳.xlsx" in t for t in caption_texts)
+    assert any(_MANUAL_UPLOADER_CAPTION in t for t in caption_texts)

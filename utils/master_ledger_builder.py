@@ -76,16 +76,12 @@ REVUP_RELATION = "RevUp"
 REUSE_RELATION = "流用"
 
 # Work Master の列構成。Master と異なり Sashiban・Module・Side を Child の前に持つ。
-# "Relation" は 2026-09 に追加（ユーザー要求）。Master と同じく Parent の直後に置く。
-# 旧形式（Relation列なしの15列）でアップロードされた台帳も読めるようにしてある
-# （read_work_master_rows 参照。黙って前回分を捨てないため）。
+# "Relation" は Master と同じく Parent の直後に置く。
 WORK_MASTER_HEADERS = (
     "Sashiban", "Module", "Side", "Child", "Parent", "Relation", "Title", "Subtitle", "Diff Type",
     "Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities",
     "Total Entities", "Note", "Recorded Date",
 )
-# Relation列を追加する前の列構成（2026-09以前にダウンロードされた台帳）。
-LEGACY_WORK_MASTER_HEADERS = tuple(h for h in WORK_MASTER_HEADERS if h != "Relation")
 _WM_SASHIBAN_COL = WORK_MASTER_HEADERS.index("Sashiban")
 _WM_CHILD_COL = WORK_MASTER_HEADERS.index("Child")
 _WM_PARENT_COL = WORK_MASTER_HEADERS.index("Parent")
@@ -198,43 +194,6 @@ def _normalize_work_master_rows(rows):
         ):
             normalized[key] = row
     return normalized
-
-
-def _relation_lookup(master_rows):
-    """Master の行（Relation列を持つ）から (child, parent) -> Relation の辞書を作る。
-
-    旧形式（Relation列が無い15列）でアップロードされた Work Master 行の Relation を
-    補完するために使う（_backfill_work_master_relation 参照）。Master は前回分・
-    今回分をマージ済みで、かつ Work Master より対象が広い（指番を逆算できない
-    エントリも含む）ため、Work Master の全行に対応する Relation を引ける。
-
-    キーは Work Master 側（正規化済みで必ず str）と突き合わせるため、Master 側も
-    同じ規則で str 化する（型ドリフト対策。_normalize_work_master_rows 参照）。
-    """
-    lookup = {}
-    for row in (master_rows or {}).values():
-        child = row[CHILD_COL] if row[CHILD_COL] is None else str(row[CHILD_COL])
-        parent = row[PARENT_COL] if row[PARENT_COL] is None else str(row[PARENT_COL])
-        lookup[(child, parent)] = row[_MASTER_RELATION_COL]
-    return lookup
-
-
-def _backfill_work_master_relation(work_master, relation_by_child_parent):
-    """Relation が空の Work Master 行（旧形式の台帳から読み込んだ行）を、Master の
-    Relation で埋める。
-
-    これにより、Relation列が無かった頃にダウンロードされた台帳を再アップロードして
-    も、次回の出力では Relation が入り、RevUp/流用の判定
-    （_drop_reuse_rows_superseded_by_revup）も前回分に遡って効く。Master に該当
-    ペアが無い場合は空のままにする（判定対象外として素通しする＝消さない）。
-    """
-    filled = {}
-    for key, row in work_master.items():
-        if row[_WM_RELATION_COL] is None:
-            relation = relation_by_child_parent.get((row[_WM_CHILD_COL], row[_WM_PARENT_COL]))
-            row = row[:_WM_RELATION_COL] + (relation,) + row[_WM_RELATION_COL + 1:]
-        filled[key] = row
-    return filled
 
 
 def _drop_reuse_rows_superseded_by_revup(rows, relation_col_idx, group_key):
@@ -385,11 +344,6 @@ def read_work_master_rows(file_bytes):
     (sashiban, module, side, child, parent) をキーとする行の辞書を読み込む。
     シートが存在しない・構成が想定と異なる場合は None を返す（呼び出し側は今回分
     のみで新規作成する。Masterと異なりこの場合は警告を出さない）。
-
-    **旧形式（Relation列が無い15列。2026-09以前にダウンロードされた台帳）も受け付け、
-    Relation を None として現行の16列形へ変換する**（Relation は呼び出し側が Master
-    から補完する。_backfill_work_master_relation 参照）。列を増やした際に旧形式を
-    弾いてしまうと、蓄積済みのWork Masterが警告も無く丸ごと捨てられるため。
     """
     try:
         wb = load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
@@ -401,19 +355,11 @@ def read_work_master_rows(file_bytes):
             return None
         ws = wb[WORK_MASTER_SHEET_NAME]
         rows = list(ws.iter_rows(values_only=True))
-        if not rows:
+        if not rows or tuple(rows[0]) != WORK_MASTER_HEADERS:
             return None
-        header = tuple(rows[0])
-        if header == WORK_MASTER_HEADERS:
-            data_rows = [tuple(row) for row in rows[1:]]
-        elif header == LEGACY_WORK_MASTER_HEADERS:
-            data_rows = [
-                tuple(row[:_WM_RELATION_COL]) + (None,) + tuple(row[_WM_RELATION_COL:])
-                for row in rows[1:]
-            ]
-        else:
-            return None
-        return {tuple(row[idx] for idx in _WM_KEY_COL_INDEXES): row for row in data_rows}
+        return {
+            tuple(row[idx] for idx in _WM_KEY_COL_INDEXES): tuple(row) for row in rows[1:]
+        }
     finally:
         wb.close()
 
@@ -587,13 +533,6 @@ def build_master_workbook(entries, previous_master_rows=None, previous_work_mast
         _normalize_work_master_rows(previous_work_master_rows),
         _normalize_work_master_rows(extract_unique_work_master_rows(entries)),
         _WM_RECORDED_DATE_COL,
-    )
-    # 旧形式（Relation列なし）の台帳から来た行の Relation を Master から補完する。
-    # **間引きより前に**行うこと（Relationが空のままだと判定対象外になり、前回分の
-    # 流用の行が残ってしまう）。参照元は間引き前の Master（間引き後だと落とした
-    # 流用ペアを引けなくなる）。
-    combined_work_master = _backfill_work_master_relation(
-        combined_work_master, _relation_lookup(combined_master),
     )
     # RevUpと流用が両方ある図面は流用を落とす。Summaryは間引き後のWork Masterから
     # 集計する（Work Masterの見た目と集計値を一致させるため）。
