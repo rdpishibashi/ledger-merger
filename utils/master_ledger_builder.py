@@ -64,8 +64,16 @@ MASTER_HEADERS = (
     "Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities",
     "Total Entities", "Note", "Recorded Date",
 )
+_MASTER_RELATION_COL = MASTER_HEADERS.index("Relation")
 _MASTER_DIFF_TYPE_COL = MASTER_HEADERS.index("Diff Type")
 _MASTER_RECORDED_DATE_COL = MASTER_HEADERS.index("Recorded Date")
+
+# DXF-diff-manager が Relation 列に書く関係の種別。同じ図面（Child）に対して
+# 「RevUp」と「流用」の両方が記録されている場合、Work Master では RevUp を採用し
+# 流用の行を落とす（Drawing-genealogy の GraphBuilder._reuse_pairs_to_delete()
+# と同じ規則。2026-09、ユーザー要求）。
+REVUP_RELATION = "RevUp"
+REUSE_RELATION = "流用"
 
 # Work Master の列構成。Master と異なり Sashiban・Module・Side を Child の前に持つ。
 WORK_MASTER_HEADERS = (
@@ -184,6 +192,60 @@ def _normalize_work_master_rows(rows):
         ):
             normalized[key] = row
     return normalized
+
+
+def _relation_lookup(master_rows):
+    """Master の行（Relation列を持つ）から (child, parent) -> Relation の辞書を作る。
+
+    Work Master は Relation 列を持たないため、「RevUpと流用の両方がある図面は
+    RevUpを採用する」規則（_drop_reuse_rows_superseded_by_revup）の判定には
+    Master 側の Relation を参照する。Master は前回分・今回分をマージ済みで、かつ
+    Work Master より対象が広い（指番を逆算できないエントリも含む）ため、Work Master
+    の全行に対応する Relation を引ける。
+
+    キーは Work Master 側（正規化済みで必ず str）と突き合わせるため、Master 側も
+    同じ規則で str 化する（型ドリフト対策。_normalize_work_master_rows 参照）。
+    """
+    lookup = {}
+    for row in (master_rows or {}).values():
+        child = row[CHILD_COL] if row[CHILD_COL] is None else str(row[CHILD_COL])
+        parent = row[PARENT_COL] if row[PARENT_COL] is None else str(row[PARENT_COL])
+        lookup[(child, parent)] = row[_MASTER_RELATION_COL]
+    return lookup
+
+
+def _drop_reuse_rows_superseded_by_revup(work_master, relation_by_child_parent):
+    """同じ図面に「RevUp」と「流用」の両方の関係がある場合、Work Master では
+    「流用」の行を落として「RevUp」の行だけを残す（2026-09、ユーザー要求。
+    Drawing-genealogy の GraphBuilder._reuse_pairs_to_delete() と同じ考え方）。
+
+    判定の単位は **(Sashiban, Module, Side, Child)**。同じ指番・モジュール・サイドの
+    中で当該 Child に RevUp の行が実在する場合にのみ、その Child の流用の行を落とす。
+    Child だけで全体横断に判定すると、**その指番には RevUp が記録されていないのに
+    他の指番の RevUp を根拠に唯一の関係行が消える**（実データ検証: 指番
+    PE25-9601-0 の10行が、別指番 NE24-0062-0 の RevUp を理由に削除され、
+    PE25-9601-0 ではその図面の流用元が一切たどれなくなる）。Work Master は指番ごとの
+    作業台帳のため、指番をまたいだ削除はしない。
+
+    Drawing-genealogy との違い: あちらは図番の版数から RevUp エッジを**推測**もするが
+    （_infer_revision_up_edges）、ここでは台帳に実在する Relation のみで判定する
+    （ユーザー要求は「2つの関係がある場合」＝両方が記録されている場合のため）。
+    完全新規図面（Parent="none"）の行は削除対象にしない（規則の対象は流用のみ）。
+
+    Returns:
+        (filtered_work_master, dropped_keys)
+    """
+    revup_groups = {
+        key[:4] for key, row in work_master.items()
+        if relation_by_child_parent.get((row[_WM_CHILD_COL], row[_WM_PARENT_COL])) == REVUP_RELATION
+    }
+    dropped = [
+        key for key, row in work_master.items()
+        if relation_by_child_parent.get((row[_WM_CHILD_COL], row[_WM_PARENT_COL])) == REUSE_RELATION
+        and key[:4] in revup_groups
+    ]
+    filtered = {key: row for key, row in work_master.items() if key not in set(dropped)}
+    return filtered, dropped
 
 
 def extract_unique_child_parent_rows(entries):
@@ -469,6 +531,11 @@ def build_master_workbook(entries, previous_master_rows=None, previous_work_mast
     マージ済みWork Master全体を (指番,差分方式) 単位で毎回再集計する
     （compute_summary_rows 参照。Work Master自体が累積済みのため、再集計しても
     履歴は失われない）。
+
+    Work Master のみ、同じ図面に「RevUp」と「流用」の両方の関係がある場合は流用の行を
+    落とす（_drop_reuse_rows_superseded_by_revup 参照）。Master は関係の記録そのもの
+    （Relation列を持つ全件の台帳）なので、この間引きは行わない——判定に使う Relation の
+    参照元でもあるため。
     """
     combined_master = _merge_by_recorded_date(
         previous_master_rows, extract_unique_child_parent_rows(entries), _MASTER_RECORDED_DATE_COL,
@@ -480,6 +547,11 @@ def build_master_workbook(entries, previous_master_rows=None, previous_work_mast
         _normalize_work_master_rows(previous_work_master_rows),
         _normalize_work_master_rows(extract_unique_work_master_rows(entries)),
         _WM_RECORDED_DATE_COL,
+    )
+    # RevUpと流用が両方ある図面は流用を落とす。Summaryは間引き後のWork Masterから
+    # 集計する（Work Masterの見た目と集計値を一致させるため）。
+    combined_work_master, _dropped = _drop_reuse_rows_superseded_by_revup(
+        combined_work_master, _relation_lookup(combined_master),
     )
 
     new_summary_rows = compute_summary_rows(combined_work_master)
