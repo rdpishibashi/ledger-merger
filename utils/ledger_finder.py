@@ -31,6 +31,10 @@ TOTAL_COL = DIFF_LIST_HEADERS.index("Total Entities")
 
 ENTITY_LABELS = ("Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities", "Total Entities")
 
+# ENTITY_LABELS の各列インデックス（DIFF_LIST_HEADERS 内での位置）。
+# _normalize_entity_values() が "n/a" 文字列を数値 0 に正規化する対象列。
+_ENTITY_COL_INDEXES = (DELETED_COL, ADDED_COL, DIFF_COL, UNCHANGED_COL, TOTAL_COL)
+
 SUMMARY_LABELS = (
     "削除図形数 合計", "追加図形数 合計", "差分図形数 合計", "変更なし図形数 合計",
     "総図形数 合計", "図形変更率 [%]",
@@ -105,6 +109,21 @@ def _read_summary_values(ws):
     return values
 
 
+def _normalize_entity_values(row):
+    """完全新規図面の行に入る文字列 "n/a" を数値 0 に正規化する（2026-09）。
+
+    DXF-diff-manager は完全新規図面（流用元なし）の Deleted/Diff/Unchanged Entities に
+    文字列 "n/a" を書き込む。Ledger-merger 側の出力（Master・Work Master・
+    指番_モジュール_サイド別集計）はすべて数値で統一する方針のため、読み込み時点で
+    0 に正規化する（ここ1箇所で行えば全出力に波及する。ユーザー要求により統一）。
+    """
+    row = list(row)
+    for col in _ENTITY_COL_INDEXES:
+        if row[col] == 'n/a':
+            row[col] = 0
+    return tuple(row)
+
+
 def _find_diff_list_rows(wb):
     """データシート（ヘッダー行が DIFF_LIST_HEADERS と完全一致するシート）を
     シート名に依存せず探し、全行を返す。
@@ -144,7 +163,12 @@ def _try_load_ledger(path):
         # Total Entities が空欄の行は、実際には差分抽出されていない図番ペアの
         # 関係記録（親子マスター管理用）であり、Summary シートの集計にも含まれない。
         # 統合 Diff List には実際に差分抽出された行のみを含める。
-        diff_list_rows = [row for row in rows[1:] if row[TOTAL_COL] is not None]
+        # （TOTAL_COL の判定は正規化前の値で行う。"n/a"→0正規化は Deleted/Diff/
+        # Unchanged Entities のみが対象で Total Entities が "n/a" になることは
+        # 無いため、判定結果への影響はない）
+        diff_list_rows = [
+            _normalize_entity_values(row) for row in rows[1:] if row[TOTAL_COL] is not None
+        ]
         if not diff_list_rows:
             return None
 

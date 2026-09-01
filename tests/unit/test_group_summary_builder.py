@@ -129,8 +129,9 @@ def test_aggregate_diff_list_by_child_sums_entity_columns_across_revisions():
 
     by_child = {row[0]: row for row in aggregated}
     assert by_child["C1"][7:] == (11, 22, 33, 44, 55)
-    # C2 は全出現が 'n/a' の列（Deleted/Diff/Unchanged）はそのまま 'n/a'、Added/Totalは合計
-    assert by_child["C2"][7:] == ("n/a", 20, "n/a", "n/a", 20)
+    # C2 は全出現が非数値（'n/a'）の列（Deleted/Diff/Unchanged）は0、Added/Totalは合計
+    # （2026-09、Master・Work Master・指番別集計いずれも数値表示に統一するユーザー要求）
+    assert by_child["C2"][7:] == (0, 20, 0, 0, 20)
 
 
 def test_aggregate_diff_list_by_child_uses_latest_row_for_non_entity_columns():
@@ -154,7 +155,7 @@ def test_aggregate_diff_list_by_child_uses_latest_row_for_non_entity_columns():
 
 
 def test_build_group_workbooks_from_real_fixture():
-    """実データフィクスチャからグループ別Excelが生成され、Summary/Diff Listの
+    """実データフィクスチャからグループ別Excelが生成され、Summary/Masterの
     構造が想定通りであることを確認する。"""
     entries, _missing = find_ledger_files(REAL_DATA_ROOT)
     files = build_group_workbooks(entries)
@@ -169,13 +170,13 @@ def test_build_group_workbooks_from_real_fixture():
     import openpyxl
 
     wb = openpyxl.load_workbook(io.BytesIO(files["ME24-1001-0_ZMF1_405_all.xlsx"]))
-    assert wb.sheetnames == ["Summary", "Diff List"]
+    assert wb.sheetnames == ["Summary", "Master"]  # 2026-09、"Diff List"→"Master"に改名
 
     summary_ws = wb["Summary"]
     header = [c.value for c in summary_ws[1]]
     assert header == [None, None, "TOTAL", '"01"']
 
-    diff_ws = wb["Diff List"]
+    diff_ws = wb["Master"]
     diff_header = tuple(c.value for c in diff_ws[1])
     from utils.ledger_finder import DIFF_LIST_HEADERS
     assert diff_header == DIFF_LIST_HEADERS
@@ -195,7 +196,7 @@ def test_diff_list_entity_columns_are_formatted_and_centered():
     files = build_group_workbooks(entries)
 
     wb = openpyxl.load_workbook(io.BytesIO(files["ME24-1001-0_ZC00_405_all.xlsx"]))
-    diff_ws = wb["Diff List"]
+    diff_ws = wb["Master"]
 
     for cell in diff_ws[1]:
         assert cell.alignment.horizontal == "center"

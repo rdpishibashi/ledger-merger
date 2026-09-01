@@ -9,10 +9,13 @@
       拡張する。実データ（Archive.zip、2026-08-04検証）で、同一 (指番, Child,
       Parent) が異なるモジュール（ZC00・ZM00）の両方に記録される例が3件確認
       されたため、モジュール/サイドを含めないと片方が消えてしまう。
-    - Summaryシートのキーは従来どおり (Sashiban, Child, Parent) のまま据え置く。
-      Summaryにもモジュール/サイドを含めると、「差分ペア総数」がDXF-diff-manager
-      自身の「差分抽出ペア数」の定義（グループごとの合計）とずれる
-      （実データ検証: ME24-1001-0 で 51→52 に変化）。
+    - Summaryシートのキーは当初 (Sashiban, Child, Parent) のみ（モジュール/サイド
+      非依存）としていたが、2026-09、Summaryの算出方法自体をWork Master由来の
+      集計に変更した（ユーザー要求）ことに伴い、Work Masterの行（モジュール/サイド
+      違いを区別する）をそのまま (指番,差分方式) で集計するようになった。そのため
+      モジュール違いの同一 (Child,Parent) は現在は別ペアとして数える
+      （tests/unit/test_master_ledger_builder.py 参照。以前のDXF-diff-manager
+      「差分抽出ペア数」定義との厳密な整合は、この変更により優先度を下げた）。
 """
 
 import os
@@ -64,11 +67,12 @@ def test_work_master_keeps_both_rows_when_same_child_parent_spans_two_modules():
     assert unique[("ME24-1001-0", "ZM00", "405", "C1", "P1")][:5] == ("ME24-1001-0", "ZM00", "405", "C1", "P1")
 
 
-def test_summary_pair_count_unaffected_by_module_side_key_change():
-    """Work Masterのキー拡張後も、Summaryの「差分ペア総数」は従来どおり
-    (指番,Child,Parent) 単位でユニーク化した値のまま変わらない（モジュール違いの
-    重複は1ペアとして数える。DXF-diff-manager自身の「差分抽出ペア数」の定義に
-    揃えるための仕様）。"""
+def test_summary_pair_count_reflects_work_master_module_side_rows():
+    """2026-09、SummaryはWork Master由来の集計に変更した（ユーザー要求）。Work
+    Masterはモジュール/サイド違いの同一(Child,Parent)を別行として保持するため、
+    そこから集計するSummaryの「変更図面総数」もモジュール違いを別ペアとして数える
+    （test_work_master_keeps_both_rows_when_same_child_parent_spans_two_modules
+    が検証するWork Master側の挙動と整合させたもの）。"""
     entry_zc00 = LedgerEntry(
         package_name=_ZC00_PACKAGE, source_path="a.xlsx",
         diff_list_rows=[_row("C1", "P1", "RevUp", datetime(2026, 8, 1, 10, 0))],
@@ -80,8 +84,8 @@ def test_summary_pair_count_unaffected_by_module_side_key_change():
         summary_values={},
     )
 
-    summary_rows = compute_summary_rows([entry_zc00, entry_zm00], run_timestamp=datetime(2026, 8, 4))
+    summary_rows = compute_summary_rows(extract_unique_work_master_rows([entry_zc00, entry_zm00]))
 
     assert len(summary_rows) == 1
-    pair_count = summary_rows[0][7]  # 差分ペア総数（指番,差分方式の次）
-    assert pair_count == 1  # モジュール違いでも(Child,Parent)は1ペアとして数える
+    pair_count = summary_rows[0][7]  # 変更図面総数（指番,差分方式の次）
+    assert pair_count == 2  # モジュール違い（ZC00/ZM00）はWork Master上は別行のため別ペア

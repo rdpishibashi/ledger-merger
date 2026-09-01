@@ -36,16 +36,21 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 import openpyxl
 
-from utils.master_ledger_builder import build_master_workbook, MASTER_SHEET_NAME, WORK_MASTER_SHEET_NAME
+from utils.master_ledger_builder import (
+    MASTER_SHEET_NAME,
+    WORK_MASTER_HEADERS,
+    WORK_MASTER_SHEET_NAME,
+    build_master_workbook,
+)
 
 
 def test_work_master_sort_survives_none_in_previous_rows():
     """previous_work_master_rows に None を含むキーが混在してもクラッシュしない。"""
     previous_work_master_rows = {
         ("AA11-1111-1", None, "405", "C1", "P1"):
-            ("AA11-1111-1", None, "405", "C1", "P1", "T", "S", "A", 1, 2, 3, 4, 10, None, None),
+            ("AA11-1111-1", None, "405", "C1", "P1", "RevUp", "T", "S", "A", 1, 2, 3, 4, 10, None, None),
         ("AA11-1111-1", "ZM00", "405", "C2", "P2"):
-            ("AA11-1111-1", "ZM00", "405", "C2", "P2", "T", "S", "A", 1, 2, 3, 4, 10, None, None),
+            ("AA11-1111-1", "ZM00", "405", "C2", "P2", "RevUp", "T", "S", "A", 1, 2, 3, 4, 10, None, None),
     }
 
     data = build_master_workbook([], previous_work_master_rows=previous_work_master_rows)
@@ -64,9 +69,9 @@ def test_work_master_sort_survives_int_side_mixed_with_str_side():
     """
     previous_work_master_rows = {
         ("AA11-1111-1", "ZM00", 405, "C1", "P1"):
-            ("AA11-1111-1", "ZM00", 405, "C1", "P1", "T", "S", "A", 1, 2, 3, 4, 10, None, None),
+            ("AA11-1111-1", "ZM00", 405, "C1", "P1", "RevUp", "T", "S", "A", 1, 2, 3, 4, 10, None, None),
         ("AA11-1111-1", "ZM00", "405", "C2", "P2"):
-            ("AA11-1111-1", "ZM00", "405", "C2", "P2", "T", "S", "A", 1, 2, 3, 4, 10, None, None),
+            ("AA11-1111-1", "ZM00", "405", "C2", "P2", "RevUp", "T", "S", "A", 1, 2, 3, 4, 10, None, None),
     }
 
     data = build_master_workbook([], previous_work_master_rows=previous_work_master_rows)
@@ -118,10 +123,9 @@ def test_both_sheets_survive_combined_none_int_and_string_keys():
         (123, 456): (123, 456, None, None, None, None, None, None, None, None, None, None, None),
     }
     previous_work_master_rows = {
-        (None, None, None, None, None):
-            (None, None, None, None, None, None, None, None, None, None, None, None, None, None, None),
+        (None, None, None, None, None): (None,) * len(WORK_MASTER_HEADERS),
         ("AA11-1111-1", "ZM00", 405, 789, "P9"):
-            ("AA11-1111-1", "ZM00", 405, 789, "P9", None, None, None, None, None, None, None, None, None, None),
+            ("AA11-1111-1", "ZM00", 405, 789, "P9") + (None,) * (len(WORK_MASTER_HEADERS) - 5),
     }
 
     data = build_master_workbook(

@@ -1,17 +1,24 @@
-"""仕様確認: 2026-09、DXF-diff-manager の Summary「図面統計」欄削除に伴う警告表示。
+"""仕様確認（無効化・2026-09）: DXF-diff-manager の Summary「図面統計」欄削除に伴う警告表示。
 
-受入条件（ユーザーが下流影響〈指番図面総数・流用率 [%]・新規作成率 [%] が 0 に
-なる〉を承知のうえで全削除を選択したため、Ledger-merger 側は台帳を検出対象外に
-しないことに加えて、値が失われる台帳をユーザーに明示する）:
-- 「図面統計」を持たない台帳が1件以上あった場合、その一覧を警告表示する。
-- 該当が無ければ警告は表示しない。
-
-`st.file_uploader` の実アップロード操作は `AppTest` がサポートしないため、
-`tests/regression/spec/test_new_merge_flow.py` と同様に `st.session_state` を
-直接シードしてUIの表示条件のみを検証する。
+この機能は 2026-08 時点で「指番図面総数・流用率 [%]・新規作成率 [%] が 0 になる」
+下流影響をユーザーに警告するために追加されたが、2026-09、ユーザー要求により
+統合図面管理台帳.xlsx の Summary シート自体からこの3列を削除した
+（tests/unit/test_master_ledger_builder.py::test_summary_headers_no_longer_include_removed_columns
+参照）。値が失われる列がそもそも存在しなくなったため、この警告機能自体が
+`app.py` から削除された（`merged_missing_drawing_stats` セッションキー・
+対応する expander ともに廃止）。警告対象の問題自体が無くなったため、代替の
+仕様テストは追加していない（新しい受入条件が無い）。このファイルはL2の記録
+として保持し、削除はしない。
 """
 
+import pytest
 from streamlit.testing.v1 import AppTest
+
+pytestmark = pytest.mark.skip(
+    reason="2026-09、警告対象の「図面統計を持たない台帳」機能ごとapp.pyから削除された"
+    "（Summaryシートの指番図面総数・流用率[%]・新規作成率[%]列を削除したため）。"
+    "モジュールdocstring参照。"
+)
 
 
 def _run(**session_state_overrides):
