@@ -428,10 +428,17 @@ def build_master_workbook(
     # 見えなくなる）。Diff Type はキー〈child, parent〉ではなく行の値側にあるため、
     # combined_master から都度引いて判定する。None〈逆算不可〉は同一Child内で
     # 末尾に回す。
+    #
+    # k[0]（Child）を `or ''` で防御しているのは、アップロードされた前回の
+    # 統合図面管理台帳.xlsx（previous_master_rows）に Child が空欄のセルを持つ行が
+    # 混在していた場合、今回分（常に非空の文字列）との比較で
+    # `TypeError: '<' not supported between instances of 'str' and 'NoneType'`
+    # が発生するのを防ぐため（2026-09、Work Master側で実際に発生した不具合と
+    # 同じクラス。下記参照）。
     _write_ledger_sheet(
         ws, MASTER_HEADERS, combined_master,
         sort_key=lambda k: (
-            k[0],
+            k[0] or '',
             combined_master[k][_MASTER_DIFF_TYPE_COL] is None,
             combined_master[k][_MASTER_DIFF_TYPE_COL] or "",
         ),
@@ -439,9 +446,18 @@ def build_master_workbook(
     )
 
     wm_ws = wb.create_sheet(WORK_MASTER_SHEET_NAME)
+    # 各要素を `or ''` で防御しているのは、アップロードされた前回の
+    # 統合図面管理台帳.xlsx（previous_work_master_rows）の Work Master シートに
+    # Sashiban/Module/Side/Child のいずれかが空欄のセルを持つ行が混在していた場合、
+    # 今回分（parse_sashiban_module_side() が返す値は "na" 文字列であり None には
+    # ならない）の文字列キーとの比較で
+    # `TypeError: '<' not supported between instances of 'str' and 'NoneType'`
+    # が発生するため（2026-09 ユーザー報告で実際に発生。原因は前回アップロード
+    # ファイル側の空欄セルで、当時のファイルがどう生成されたかまでは特定していない）。
     _write_ledger_sheet(
         wm_ws, WORK_MASTER_HEADERS, combined_work_master,
-        sort_key=lambda k: (k[0], k[1], k[2], k[3]), recorded_date_col_idx=_WM_RECORDED_DATE_COL,
+        sort_key=lambda k: (k[0] or '', k[1] or '', k[2] or '', k[3] or ''),
+        recorded_date_col_idx=_WM_RECORDED_DATE_COL,
     )
 
     summary_ws = wb.create_sheet(SUMMARY_SHEET_NAME)
