@@ -182,9 +182,11 @@ def test_filtered_rows_preserve_original_order_and_values():
     """除外後に残る行は、元の Diff List シートの該当行を順序・値ともに保持している
     （並び替えやデータ欠落が無いことの往復確認）。
 
-    唯一の例外がエンティティ5列の `"n/a"`→`0` 正規化（2026-09、出力を数値で統一する
-    ユーザー要求。`_normalize_entity_values()`）。ここで正規化することで Master・
-    Work Master・指番_モジュール_サイド別集計の全出力に波及する。
+    唯一の例外がエンティティ6列の `"n/a"`→`0` 正規化（2026-09、出力を数値で統一する
+    ユーザー要求。`_normalize_entity_values()`）と、旧形式（12列、"Unchanged Offset
+    Entities" 列が無い）実データ行を新形式13列に揃えるための末尾への 0 埋め
+    （2026-09-18、_find_diff_list_rows() の後方互換パディングと同じ処理。
+    このテストのサンプルファイル自体が旧形式のため必要）。
     """
     from utils.ledger_finder import ENTITY_LABELS, DIFF_LIST_HEADERS, TOTAL_COL
 
@@ -192,6 +194,8 @@ def test_filtered_rows_preserve_original_order_and_values():
 
     def normalized(row):
         row = list(row)
+        if len(row) < len(DIFF_LIST_HEADERS):
+            row = row + [0] * (len(DIFF_LIST_HEADERS) - len(row))
         for col in entity_cols:
             if row[col] == 'n/a':
                 row[col] = 0

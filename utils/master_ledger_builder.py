@@ -47,6 +47,7 @@ from utils.ledger_finder import (
     TITLE_COL,
     TOTAL_COL,
     UNCHANGED_COL,
+    UNCHANGED_OFFSET_COL,
 )
 
 MASTER_SHEET_NAME = "Master"
@@ -62,11 +63,24 @@ LEFT_ALIGNMENT = Alignment(horizontal="left")
 MASTER_HEADERS = (
     "Child", "Parent", "Relation", "Title", "Subtitle", "Diff Type",
     "Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities",
-    "Total Entities", "Note", "Recorded Date",
+    "Total Entities", "Note", "Unchanged Offset Entities", "Recorded Date",
 )
 _MASTER_RELATION_COL = MASTER_HEADERS.index("Relation")
 _MASTER_DIFF_TYPE_COL = MASTER_HEADERS.index("Diff Type")
+_MASTER_UNCHANGED_OFFSET_COL = MASTER_HEADERS.index("Unchanged Offset Entities")
 _MASTER_RECORDED_DATE_COL = MASTER_HEADERS.index("Recorded Date")
+
+# 2026-09-18より前（オフセット補正機能導入前）のMASTER_HEADERS。'Unchanged
+# Offset Entities' 列が無い13列形式。read_master_rows() が、ユーザーが以前
+# ダウンロードした統合図面管理台帳.xlsx（旧形式）を今回再アップロードした場合の
+# 後方互換読み込みに使う（新形式との完全一致判定だけだと、列追加のたびに
+# 過去の統合台帳が「別ファイル」扱いされ、マージされず今回分だけで
+# 上書きされてしまう——ledger_finder.py の DIFF_LIST_HEADERS と同じ理由）。
+LEGACY_MASTER_HEADERS = (
+    "Child", "Parent", "Relation", "Title", "Subtitle", "Diff Type",
+    "Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities",
+    "Total Entities", "Note", "Recorded Date",
+)
 
 # DXF-diff-manager が Relation 列に書く関係の種別。同じ図面（Child）に対して
 # 「RevUp」と「流用」の両方が記録されている場合、Work Master では RevUp を採用し
@@ -80,7 +94,7 @@ REUSE_RELATION = "流用"
 WORK_MASTER_HEADERS = (
     "Sashiban", "Module", "Side", "Child", "Parent", "Relation", "Title", "Subtitle", "Diff Type",
     "Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities",
-    "Total Entities", "Note", "Recorded Date",
+    "Total Entities", "Note", "Unchanged Offset Entities", "Recorded Date",
 )
 _WM_SASHIBAN_COL = WORK_MASTER_HEADERS.index("Sashiban")
 _WM_CHILD_COL = WORK_MASTER_HEADERS.index("Child")
@@ -90,7 +104,16 @@ _WM_DIFF_TYPE_COL = WORK_MASTER_HEADERS.index("Diff Type")
 _WM_DELETED_COL = WORK_MASTER_HEADERS.index("Deleted Entities")
 _WM_ADDED_COL = WORK_MASTER_HEADERS.index("Added Entities")
 _WM_TOTAL_COL = WORK_MASTER_HEADERS.index("Total Entities")
+_WM_UNCHANGED_OFFSET_COL = WORK_MASTER_HEADERS.index("Unchanged Offset Entities")
 _WM_RECORDED_DATE_COL = WORK_MASTER_HEADERS.index("Recorded Date")
+
+# 2026-09-18より前のWORK_MASTER_HEADERS（'Unchanged Offset Entities' 列が
+# 無い16列形式）。LEGACY_MASTER_HEADERSと同じ理由でread_work_master_rows()が使う。
+LEGACY_WORK_MASTER_HEADERS = (
+    "Sashiban", "Module", "Side", "Child", "Parent", "Relation", "Title", "Subtitle", "Diff Type",
+    "Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities",
+    "Total Entities", "Note", "Recorded Date",
+)
 
 # Work Master 上で文字列型・左寄せに統一する列（2026-09、ユーザー要求）。
 # Sashiban/Module/Side/Child は本来すべて文字列だが、_sort_str() のdocstringで
@@ -231,7 +254,7 @@ def _drop_reuse_rows_superseded_by_revup(rows, relation_col_idx, group_key):
 
 def extract_unique_child_parent_rows(entries):
     """LedgerEntry のリストから、"Child"-"Parent" ペアでユニーク化した
-    MASTER_HEADERS 13列のデータを返す。同じペアが複数エントリにまたがる場合は
+    MASTER_HEADERS 14列のデータを返す。同じペアが複数エントリにまたがる場合は
     "Recorded Date" が最も新しい行を採用する。Diff Type は Diff Package
     （出力フォルダ名）から parse_diff_type() で逆算する（指番の解決可否に関わらず
     全エントリが対象——Master は Work Master と異なり指番不明のエントリも含むため）。
@@ -247,7 +270,7 @@ def extract_unique_child_parent_rows(entries):
             candidate = (
                 row[CHILD_COL], row[PARENT_COL], row[RELATION_COL], row[TITLE_COL], row[SUBTITLE_COL],
                 diff_type, row[DELETED_COL], row[ADDED_COL], row[DIFF_COL], row[UNCHANGED_COL],
-                row[TOTAL_COL], row[NOTE_COL], row[RECORDED_DATE_COL],
+                row[TOTAL_COL], row[NOTE_COL], row[UNCHANGED_OFFSET_COL], row[RECORDED_DATE_COL],
             )
             existing = unique.get(key)
             if existing is None or (
@@ -293,7 +316,7 @@ def _extract_unique_work_master_entries(entries):
 
 def extract_unique_work_master_rows(entries):
     """LedgerEntry のリストから、指番・モジュール・サイドごとに "Child"-"Parent"
-    ペアでユニーク化した WORK_MASTER_HEADERS 16列のデータを返す。Diff Package
+    ペアでユニーク化した WORK_MASTER_HEADERS 17列のデータを返す。Diff Package
     （出力フォルダ名）から指番を逆算できないエントリは対象外とする。同じキーが
     複数エントリにまたがる場合は "Recorded Date" が最も新しい行を採用する
     （_extract_unique_work_master_entries 参照）。
@@ -312,15 +335,30 @@ def extract_unique_work_master_rows(entries):
             sashiban, module, side, row[CHILD_COL], row[PARENT_COL], row[RELATION_COL],
             row[TITLE_COL], row[SUBTITLE_COL], diff_type,
             row[DELETED_COL], row[ADDED_COL], row[DIFF_COL], row[UNCHANGED_COL], row[TOTAL_COL],
-            row[NOTE_COL], row[RECORDED_DATE_COL],
+            row[NOTE_COL], row[UNCHANGED_OFFSET_COL], row[RECORDED_DATE_COL],
         )
     return result
+
+
+def _pad_legacy_row(row, insert_idx):
+    """旧形式（'Unchanged Offset Entities' 列が無い）の行に、その列の位置へ
+    0 を挿入して新形式と同じ列数・並びに揃える。旧形式の統合図面管理台帳には
+    オフセット補正機能自体が無かったため、実際の値として0が正しい
+    （欠損・不明を表す"n/a"とは意味が異なる）。"""
+    row = list(row)
+    row.insert(insert_idx, 0)
+    return tuple(row)
 
 
 def read_master_rows(file_bytes):
     """アップロードされた統合図面管理台帳.xlsx（Masterシートのみ）から
     (child, parent) をキーとする行の辞書を読み込む。シート構成が想定と異なる
     （壊れている、別ファイル等）場合は None を返す。
+
+    2026-09-18より前にダウンロードされた旧形式（LEGACY_MASTER_HEADERS、
+    'Unchanged Offset Entities' 列が無い13列）も後方互換で読み込む
+    （新形式との完全一致だけで判定すると、列追加のたびに過去の統合台帳が
+    黙って「別ファイル」判定され、マージされず今回分だけで上書きされてしまう）。
     """
     try:
         wb = load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
@@ -332,9 +370,16 @@ def read_master_rows(file_bytes):
             return None
         ws = wb[MASTER_SHEET_NAME]
         rows = list(ws.iter_rows(values_only=True))
-        if not rows or tuple(rows[0]) != MASTER_HEADERS:
+        if not rows:
             return None
-        return {(row[CHILD_COL], row[PARENT_COL]): tuple(row) for row in rows[1:]}
+        header = tuple(rows[0])
+        if header == MASTER_HEADERS:
+            data_rows = [tuple(row) for row in rows[1:]]
+        elif header == LEGACY_MASTER_HEADERS:
+            data_rows = [_pad_legacy_row(row, _MASTER_UNCHANGED_OFFSET_COL) for row in rows[1:]]
+        else:
+            return None
+        return {(row[CHILD_COL], row[PARENT_COL]): row for row in data_rows}
     finally:
         wb.close()
 
@@ -344,6 +389,9 @@ def read_work_master_rows(file_bytes):
     (sashiban, module, side, child, parent) をキーとする行の辞書を読み込む。
     シートが存在しない・構成が想定と異なる場合は None を返す（呼び出し側は今回分
     のみで新規作成する。Masterと異なりこの場合は警告を出さない）。
+
+    read_master_rows() と同様、旧形式（LEGACY_WORK_MASTER_HEADERS、16列）も
+    後方互換で読み込む。
     """
     try:
         wb = load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
@@ -355,10 +403,17 @@ def read_work_master_rows(file_bytes):
             return None
         ws = wb[WORK_MASTER_SHEET_NAME]
         rows = list(ws.iter_rows(values_only=True))
-        if not rows or tuple(rows[0]) != WORK_MASTER_HEADERS:
+        if not rows:
+            return None
+        header = tuple(rows[0])
+        if header == WORK_MASTER_HEADERS:
+            data_rows = [tuple(row) for row in rows[1:]]
+        elif header == LEGACY_WORK_MASTER_HEADERS:
+            data_rows = [_pad_legacy_row(row, _WM_UNCHANGED_OFFSET_COL) for row in rows[1:]]
+        else:
             return None
         return {
-            tuple(row[idx] for idx in _WM_KEY_COL_INDEXES): tuple(row) for row in rows[1:]
+            tuple(row[idx] for idx in _WM_KEY_COL_INDEXES): row for row in data_rows
         }
     finally:
         wb.close()

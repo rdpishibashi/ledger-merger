@@ -48,8 +48,8 @@ from utils.master_ledger_builder import (
 _PACKAGE_NAME = "dxf_diff_results_TypeA_ME24-1001-0_ZC00_405"
 
 
-def _row(child, parent, recorded_date, deleted=1, added=2, diff=3, unchanged=4, total=5):
-    return (child, parent, "RevUp", "T", "S", recorded_date, None, deleted, added, diff, unchanged, total)
+def _row(child, parent, recorded_date, deleted=1, added=2, diff=3, unchanged=4, total=5, unchanged_offset=0):
+    return (child, parent, "RevUp", "T", "S", recorded_date, None, deleted, added, diff, unchanged, total, unchanged_offset)
 
 
 def _previous_rows_with_numeric_side(recorded_date, deleted):
@@ -57,7 +57,7 @@ def _previous_rows_with_numeric_side(recorded_date, deleted):
     （read_work_master_rows() がセルの生値からキーを作るのと同じ形）。"""
     row = (
         "ME24-1001-0", "ZC00", 405, "C1", "P1", "RevUp", "T", "S", "A",
-        deleted, 2, 3, 4, 5, None, recorded_date,
+        deleted, 2, 3, 4, 5, None, 0, recorded_date,
     )
     return {("ME24-1001-0", "ZC00", 405, "C1", "P1"): row}
 

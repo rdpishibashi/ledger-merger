@@ -57,17 +57,18 @@ _TYPE_A_PACKAGE = "dxf_diff_results_TypeA_ME24-1001-0_ZC00_405"
 _TYPE_B_PACKAGE = "dxf_diff_results_TypeB_ME24-1001-0_ZM00_405"
 
 
-def _row(child, parent, relation, recorded_date, deleted=1, added=2, diff=3, unchanged=4, total=5, note=None):
-    return (child, parent, relation, "T", "S", recorded_date, note, deleted, added, diff, unchanged, total)
+def _row(child, parent, relation, recorded_date, deleted=1, added=2, diff=3, unchanged=4, total=5, note=None, unchanged_offset=0):
+    return (child, parent, relation, "T", "S", recorded_date, note, deleted, added, diff, unchanged, total, unchanged_offset)
 
 
 def test_work_master_headers_column_order():
     """2026-09、"Relation" を Parent の直後に追加した（Master と同じ位置。
-    tests/regression/spec/test_revup_supersedes_reuse_in_work_master.py 参照）。"""
+    tests/regression/spec/test_revup_supersedes_reuse_in_work_master.py 参照）。
+    2026-09-18、"Unchanged Offset Entities" を Note の後・Recorded Date の前に追加。"""
     assert WORK_MASTER_HEADERS == (
         "Sashiban", "Module", "Side", "Child", "Parent", "Relation", "Title", "Subtitle", "Diff Type",
         "Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities",
-        "Total Entities", "Note", "Recorded Date",
+        "Total Entities", "Note", "Unchanged Offset Entities", "Recorded Date",
     )
 
 
@@ -93,7 +94,8 @@ def test_work_master_row_has_diff_type_and_moved_note_recorded_date():
         "Sashiban": "ME24-1001-0", "Module": "ZC00", "Side": "405", "Child": "C1", "Parent": "P1",
         "Relation": "RevUp", "Title": "T", "Subtitle": "S", "Diff Type": "A",
         "Deleted Entities": 1, "Added Entities": 2, "Diff Entities": 3, "Unchanged Entities": 4,
-        "Total Entities": 5, "Note": "メモ", "Recorded Date": datetime(2026, 8, 5),
+        "Total Entities": 5, "Note": "メモ", "Unchanged Offset Entities": 0,
+        "Recorded Date": datetime(2026, 8, 5),
     }
 
 
@@ -137,10 +139,11 @@ def test_summary_splits_into_separate_rows_when_diff_type_differs_within_sashiba
 
 
 def test_master_headers_column_order():
+    """2026-09-18、"Unchanged Offset Entities" を Note の後・Recorded Date の前に追加。"""
     assert MASTER_HEADERS == (
         "Child", "Parent", "Relation", "Title", "Subtitle", "Diff Type",
         "Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities",
-        "Total Entities", "Note", "Recorded Date",
+        "Total Entities", "Note", "Unchanged Offset Entities", "Recorded Date",
     )
 
 
@@ -158,7 +161,8 @@ def test_master_row_has_diff_type_relation_and_moved_note_recorded_date():
     assert dict(zip(MASTER_HEADERS, row)) == {
         "Child": "C1", "Parent": "P1", "Relation": "RevUp", "Title": "T", "Subtitle": "S",
         "Diff Type": "A", "Deleted Entities": 1, "Added Entities": 2, "Diff Entities": 3,
-        "Unchanged Entities": 4, "Total Entities": 5, "Note": "メモ", "Recorded Date": datetime(2026, 8, 5),
+        "Unchanged Entities": 4, "Total Entities": 5, "Note": "メモ",
+        "Unchanged Offset Entities": 0, "Recorded Date": datetime(2026, 8, 5),
     }
 
 

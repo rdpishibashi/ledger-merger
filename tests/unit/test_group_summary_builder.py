@@ -26,8 +26,8 @@ REAL_DATA_ROOT = os.path.join(
 )
 
 
-def _row(child, parent, relation, recorded_date, deleted, added, diff, unchanged, total):
-    return (child, parent, relation, "T", "S", recorded_date, None, deleted, added, diff, unchanged, total)
+def _row(child, parent, relation, recorded_date, deleted, added, diff, unchanged, total, unchanged_offset=0):
+    return (child, parent, relation, "T", "S", recorded_date, None, deleted, added, diff, unchanged, total, unchanged_offset)
 
 
 def test_parse_group_and_revision():
@@ -107,7 +107,10 @@ def test_group_entries_picks_latest_recorded_date_when_folder_has_duplicate_ledg
 
 
 def test_aggregate_diff_list_by_child_sums_entity_columns_across_revisions():
-    """仕様どおり、同一Childが複数レビジョンにまたがる場合は5列を単純合計する。"""
+    """仕様どおり、同一Childが複数レビジョンにまたがる場合は6列を単純合計する
+    （2026-09-18、Unchanged Offset Entitiesの追加でDeleted/Added/Diff/Unchanged/
+    Total/Unchanged Offsetの6列に拡張。この _row() 呼び出しはoffset未指定＝
+    既定値0のため、合計しても0のまま）。"""
     entry_rev1 = LedgerEntry(
         package_name="p_01", source_path="r1.xlsx",
         diff_list_rows=[
@@ -128,22 +131,22 @@ def test_aggregate_diff_list_by_child_sums_entity_columns_across_revisions():
     aggregated = aggregate_diff_list_by_child([("01", entry_rev1), ("02", entry_rev2)])
 
     by_child = {row[0]: row for row in aggregated}
-    assert by_child["C1"][7:] == (11, 22, 33, 44, 55)
+    assert by_child["C1"][7:] == (11, 22, 33, 44, 55, 0)
     # C2 は全出現が非数値（'n/a'）の列（Deleted/Diff/Unchanged）は0、Added/Totalは合計
     # （2026-09、Master・Work Master・指番別集計いずれも数値表示に統一するユーザー要求）
-    assert by_child["C2"][7:] == (0, 20, 0, 0, 20)
+    assert by_child["C2"][7:] == (0, 20, 0, 0, 20, 0)
 
 
 def test_aggregate_diff_list_by_child_uses_latest_row_for_non_entity_columns():
     """非数値列（Parent/Relation/Title等）は最新のRecorded Dateの行の値を採用する。"""
     entry_rev1 = LedgerEntry(
         package_name="p_01", source_path="r1.xlsx",
-        diff_list_rows=[("C1", "P_OLD", "流用", "T_OLD", "S_OLD", datetime(2026, 7, 1), None, 1, 1, 2, 1, 3)],
+        diff_list_rows=[("C1", "P_OLD", "流用", "T_OLD", "S_OLD", datetime(2026, 7, 1), None, 1, 1, 2, 1, 3, 0)],
         summary_values={},
     )
     entry_rev2 = LedgerEntry(
         package_name="p_02", source_path="r2.xlsx",
-        diff_list_rows=[("C1", "P_NEW", "RevUp", "T_NEW", "S_NEW", datetime(2026, 7, 2), None, 1, 1, 2, 1, 3)],
+        diff_list_rows=[("C1", "P_NEW", "RevUp", "T_NEW", "S_NEW", datetime(2026, 7, 2), None, 1, 1, 2, 1, 3, 0)],
         summary_values={},
     )
 

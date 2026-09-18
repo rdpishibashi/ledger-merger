@@ -44,8 +44,8 @@ from utils.master_ledger_builder import (
 _MATCHING_PACKAGE_NAME = "dxf_diff_results_TypeA_ME24-1001-0_ZC00_405"
 
 
-def _row(child, parent, relation, recorded_date, deleted=1, added=2, diff=3, unchanged=4, total=5):
-    return (child, parent, relation, "T", "S", recorded_date, None, deleted, added, diff, unchanged, total)
+def _row(child, parent, relation, recorded_date, deleted=1, added=2, diff=3, unchanged=4, total=5, unchanged_offset=0):
+    return (child, parent, relation, "T", "S", recorded_date, None, deleted, added, diff, unchanged, total, unchanged_offset)
 
 
 def test_revision_omitted_package_name_resolves_sashiban_module_side():

@@ -10,8 +10,16 @@ import openpyxl
 DIFF_LIST_HEADERS = (
     "Child", "Parent", "Relation", "Title", "Subtitle", "Recorded Date", "Note",
     "Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities",
-    "Total Entities",
+    "Total Entities", "Unchanged Offset Entities",
 )
+
+# 2026-09-18より前のDXF-diff-manager出力（オフセット補正機能導入前、
+# "Unchanged Offset Entities" 列を持たない12列形式）。_find_diff_list_rows() が
+# 新形式と併せて検出し、新形式と同じ13列に揃えてから返す（末尾に0を補う——
+# 旧形式にはオフセット補正機能自体が無かったため、実際の値として0が正しい。
+# 欠損・不明を表す"n/a"とは意味が異なる）。この定数自体は検出専用で、
+# DIFF_LIST_HEADERS（新形式・13列）が以降のモジュール共有の正とする。
+LEGACY_DIFF_LIST_HEADERS = DIFF_LIST_HEADERS[:-1]
 
 # DIFF_LIST_HEADERS 内の各列インデックス。台帳の生行（entry.diff_list_rows の要素）を
 # 読み出す全モジュール（group_summary_builder.py, ledger_merger.py,
@@ -28,12 +36,14 @@ ADDED_COL = DIFF_LIST_HEADERS.index("Added Entities")
 DIFF_COL = DIFF_LIST_HEADERS.index("Diff Entities")
 UNCHANGED_COL = DIFF_LIST_HEADERS.index("Unchanged Entities")
 TOTAL_COL = DIFF_LIST_HEADERS.index("Total Entities")
+UNCHANGED_OFFSET_COL = DIFF_LIST_HEADERS.index("Unchanged Offset Entities")
 
-ENTITY_LABELS = ("Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities", "Total Entities")
+ENTITY_LABELS = ("Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities",
+                  "Total Entities", "Unchanged Offset Entities")
 
 # ENTITY_LABELS の各列インデックス（DIFF_LIST_HEADERS 内での位置）。
 # _normalize_entity_values() が "n/a" 文字列を数値 0 に正規化する対象列。
-_ENTITY_COL_INDEXES = (DELETED_COL, ADDED_COL, DIFF_COL, UNCHANGED_COL, TOTAL_COL)
+_ENTITY_COL_INDEXES = (DELETED_COL, ADDED_COL, DIFF_COL, UNCHANGED_COL, TOTAL_COL, UNCHANGED_OFFSET_COL)
 
 SUMMARY_LABELS = (
     "削除図形数 合計", "追加図形数 合計", "差分図形数 合計", "変更なし図形数 合計",
@@ -53,8 +63,13 @@ SUMMARY_LABELS = (
 # （2026-08、"Master" へのシート名改名で実際に発生しかけた問題と同種の失敗モード）。
 # 新形式の台帳では、これらに依存する下流の指標（Ledger-merger の「指番図面総数」
 # 「流用率 [%]」「新規作成率 [%]」）は 0 として集計される（app.py 側で警告表示する）。
+#
+# 「変更なし（オフセット一致）図形数 合計」も同じ理由で任意項目とする
+# （2026-09-18、DXF-diff-manager のオフセット補正機能組み込みに伴い新設。
+# この指標を持たない旧形式の台帳を必須判定にすると同様に無効化されてしまう）。
 OPTIONAL_SUMMARY_LABELS = (
     "入力図面総数", "差分抽出ペア数", "流用率 [%]", "完全新規図面数", "新規作成率 [%]",
+    "変更なし（オフセット一致）図形数 合計",
 )
 
 # SUMMARY_LABELS（Ledger-merger 自身の統合Excel出力列名。README.md 記載の契約）に対する、
@@ -77,6 +92,7 @@ _SOURCE_LABEL_ALIASES = {
     "流用率 [%]": ("流用率 [%]",),
     "完全新規図面数": ("完全新規図面数",),
     "新規作成率 [%]": ("新規作成率 [%]",),
+    "変更なし（オフセット一致）図形数 合計": ("変更なし（オフセット一致）図形 総数",),
 }
 
 # DXF-diff-manager が出力する台帳以外の固定ファイル名。台帳の候補から除外する。
@@ -125,8 +141,9 @@ def _normalize_entity_values(row):
 
 
 def _find_diff_list_rows(wb):
-    """データシート（ヘッダー行が DIFF_LIST_HEADERS と完全一致するシート）を
-    シート名に依存せず探し、全行を返す。
+    """データシート（ヘッダー行が DIFF_LIST_HEADERS〈新形式〉または
+    LEGACY_DIFF_LIST_HEADERS〈旧形式、2026-09-18より前〉と完全一致するシート）を
+    シート名に依存せず探し、全行を DIFF_LIST_HEADERS（新形式・13列）に揃えて返す。
 
     DXF-diff-manager 側はこのシート名を過去の改修で変えてきた実績があり
     （'Diff List' → 'Master'、2026-08改名）、今後も変わりうる。固定シート名に
@@ -135,13 +152,29 @@ def _find_diff_list_rows(wb):
     DXF-diff-manager 自身の load_parent_child_master()（model/master_ledger.py）
     と同じ考え方で、列構成（ヘッダーの完全一致）で判定する。
 
+    旧形式（"Unchanged Offset Entities" 列を持たない12列）がヒットした場合、
+    新形式と同じ13列になるよう各データ行の末尾に 0 を補う（2026-09-18、
+    オフセット補正機能の組み込みに伴い追加。旧形式の台帳を必須列不一致で
+    無効判定してしまうと、台帳全体が黙って統合対象から除外される
+    ——2026-08の「図面統計」削除時と同じ失敗モードを繰り返さないため、
+    新旧どちらの形式も検出できるようにする）。
+
     Returns:
-        list または None: 見つかったシートの全行（ヘッダー含む）。無ければ None。
+        list または None: 見つかったシートの全行（ヘッダー含む、新形式13列に統一
+        済み）。どちらの形式にも一致しなければ None。
     """
     for name in wb.sheetnames:
         rows = list(wb[name].iter_rows(values_only=True))
-        if rows and tuple(rows[0]) == DIFF_LIST_HEADERS:
+        if not rows:
+            continue
+        header = tuple(rows[0])
+        if header == DIFF_LIST_HEADERS:
             return rows
+        if header == LEGACY_DIFF_LIST_HEADERS:
+            padded = [DIFF_LIST_HEADERS]
+            for row in rows[1:]:
+                padded.append(tuple(row) + (0,))
+            return padded
     return None
 
 

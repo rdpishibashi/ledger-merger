@@ -27,8 +27,8 @@ from utils.master_ledger_builder import (
 )
 
 
-def _row(child, parent, recorded_date, deleted=1, added=2, diff=3, unchanged=4, total=5):
-    return (child, parent, "RevUp", "T", "S", recorded_date, None, deleted, added, diff, unchanged, total)
+def _row(child, parent, recorded_date, deleted=1, added=2, diff=3, unchanged=4, total=5, unchanged_offset=0):
+    return (child, parent, "RevUp", "T", "S", recorded_date, None, deleted, added, diff, unchanged, total, unchanged_offset)
 
 
 def test_extract_unique_child_parent_rows_dedupes_within_entries():
@@ -176,7 +176,7 @@ def test_extract_unique_work_master_rows_includes_relation_and_sashiban():
     row = unique[("ME24-1001-0", "ZC00", "405", "C1", "P1")]
 
     assert row == (
-        "ME24-1001-0", "ZC00", "405", "C1", "P1", "RevUp", "T", "S", "A", 10, 20, 30, 40, 50, None,
+        "ME24-1001-0", "ZC00", "405", "C1", "P1", "RevUp", "T", "S", "A", 10, 20, 30, 40, 50, None, 0,
         datetime(2026, 7, 1),
     )
     assert dict(zip(WORK_MASTER_HEADERS, row))["Relation"] == "RevUp"
@@ -290,7 +290,7 @@ def test_work_master_string_columns_heal_numeric_drift_from_previous_upload():
     previous_work_master_rows = {
         ("ME24-1001-0", "ZC00", 405, "C_OLD", "P_OLD"): (
             "ME24-1001-0", "ZC00", 405, "C_OLD", "P_OLD", "RevUp", "T", "S", "A",
-            1, 2, 3, 4, 5, None, datetime(2026, 7, 1),
+            1, 2, 3, 4, 5, None, 0, datetime(2026, 7, 1),
         ),
     }
 
@@ -347,7 +347,7 @@ def test_compute_summary_rows_counts_brand_new_via_parent_none():
         package_name=_MATCHING_PACKAGE_NAME, source_path="a.xlsx",
         diff_list_rows=[
             _row("C1", "P1", datetime(2026, 7, 1), deleted=10, added=20, diff=30, unchanged=40, total=100),
-            ("C2", "none", "完全新規図面", "T", "S", datetime(2026, 7, 1), None, 0, 30, 0, 0, 30),
+            ("C2", "none", "完全新規図面", "T", "S", datetime(2026, 7, 1), None, 0, 30, 0, 0, 30, 0),
         ],
         summary_values={},
     )
@@ -402,10 +402,10 @@ def test_compute_summary_rows_date_is_max_recorded_date_in_group():
     """「日付」はグループ内のRecorded Dateの最大値になる（実行時刻ではない）。"""
     work_master = {
         ("S1", "M1", "SD1", "C1", "P1"): (
-            "S1", "M1", "SD1", "C1", "P1", "RevUp", "T", "S", "A", 1, 1, 2, 1, 3, None, datetime(2026, 7, 1),
+            "S1", "M1", "SD1", "C1", "P1", "RevUp", "T", "S", "A", 1, 1, 2, 1, 3, None, 0, datetime(2026, 7, 1),
         ),
         ("S1", "M1", "SD1", "C2", "P2"): (
-            "S1", "M1", "SD1", "C2", "P2", "RevUp", "T", "S", "A", 1, 1, 2, 1, 3, None, datetime(2026, 7, 20),
+            "S1", "M1", "SD1", "C2", "P2", "RevUp", "T", "S", "A", 1, 1, 2, 1, 3, None, 0, datetime(2026, 7, 20),
         ),
     }
 

@@ -58,11 +58,17 @@ LEDGER_FILENAME_PATTERN = re.compile(
 # 流用率[%]・新規作成率[%]）を削除した（ユーザー要求。DXF-diff-manager自身が同時期に
 # Summaryシートから同セクションを削除しており、entry.summary_values からこれらの値を
 # 取得できなくなっていたことにも整合する）。「エンティティ統計」のみを残す。
+#
+# 「変更なし（オフセット一致）図形 総数」（2026-09-18新設）は「変更なし図形 総数」の
+# 直後に置く。DXF-diff-manager 側と同じ並び（model/master_ledger.py の
+# entity_specs 参照）。任意項目（ledger_finder.OPTIONAL_SUMMARY_LABELS）のため
+# 存在しない台帳（旧形式）は _get_summary_value() の既定値0で埋まる。
 SUMMARY_ROWS = (
     ("エンティティ統計", "削除図形 総数"),
     (None, "追加図形 総数"),
     (None, "変更（追加+削除）図形 総数"),
     (None, "変更なし図形 総数"),
+    (None, "変更なし（オフセット一致）図形 総数"),
     (None, "アップロード図面 図形総数"),
     (None, "図形変更率 [%]"),
 )
@@ -74,13 +80,14 @@ _CANONICAL_BY_DISPLAY_LABEL = {
     "追加図形 総数": "追加図形数 合計",
     "変更（追加+削除）図形 総数": "差分図形数 合計",
     "変更なし図形 総数": "変更なし図形数 合計",
+    "変更なし（オフセット一致）図形 総数": "変更なし（オフセット一致）図形数 合計",
     "アップロード図面 図形総数": "総図形数 合計",
     "図形変更率 [%]": "図形変更率 [%]",
 }
 
 _COUNT_LABELS = (
     "削除図形 総数", "追加図形 総数", "変更（追加+削除）図形 総数", "変更なし図形 総数",
-    "アップロード図面 図形総数",
+    "変更なし（オフセット一致）図形 総数", "アップロード図面 図形総数",
 )
 _PERCENT_LABELS = {"図形変更率 [%]"}
 
@@ -216,15 +223,16 @@ def aggregate_diff_list_by_child(revision_entries):
     """revision_entries（[(revision, LedgerEntry), ...]）の全 diff_list_rows を
     Child ごとに集計する。
 
-    Deleted/Added/Diff/Unchanged/Total Entities の5列は全レビジョンにわたって
-    単純合計する（数値でない値はスキップし、ある Child の全出現が非数値の列は
+    Deleted/Added/Diff/Unchanged/Total/Unchanged Offset Entities の6列
+    （ENTITY_LABELS、2026-09-18にUnchanged Offset Entitiesを追加）は全レビジョンに
+    わたって単純合計する（数値でない値はスキップし、ある Child の全出現が非数値の列は
     0として残す——2026-09、完全新規図面の 'n/a' はutils.ledger_finder側で
     読み込み時に既に数値0へ正規化されているため実質到達しないが、防御的に
     残している）。非数値列（Parent/Relation/Title/Subtitle/Recorded Date/Note）は、
     Recorded Date が最も新しい行の値を採用する。
 
     Returns:
-        list[tuple]（DIFF_LIST_HEADERS 12列、Childの昇順）
+        list[tuple]（DIFF_LIST_HEADERS 13列、Childの昇順）
     """
     rows_by_child = defaultdict(list)
     for _revision, entry in revision_entries:

@@ -48,9 +48,9 @@ def test_work_master_sort_survives_none_in_previous_rows():
     """previous_work_master_rows に None を含むキーが混在してもクラッシュしない。"""
     previous_work_master_rows = {
         ("AA11-1111-1", None, "405", "C1", "P1"):
-            ("AA11-1111-1", None, "405", "C1", "P1", "RevUp", "T", "S", "A", 1, 2, 3, 4, 10, None, None),
+            ("AA11-1111-1", None, "405", "C1", "P1", "RevUp", "T", "S", "A", 1, 2, 3, 4, 10, None, 0, None),
         ("AA11-1111-1", "ZM00", "405", "C2", "P2"):
-            ("AA11-1111-1", "ZM00", "405", "C2", "P2", "RevUp", "T", "S", "A", 1, 2, 3, 4, 10, None, None),
+            ("AA11-1111-1", "ZM00", "405", "C2", "P2", "RevUp", "T", "S", "A", 1, 2, 3, 4, 10, None, 0, None),
     }
 
     data = build_master_workbook([], previous_work_master_rows=previous_work_master_rows)
@@ -69,9 +69,9 @@ def test_work_master_sort_survives_int_side_mixed_with_str_side():
     """
     previous_work_master_rows = {
         ("AA11-1111-1", "ZM00", 405, "C1", "P1"):
-            ("AA11-1111-1", "ZM00", 405, "C1", "P1", "RevUp", "T", "S", "A", 1, 2, 3, 4, 10, None, None),
+            ("AA11-1111-1", "ZM00", 405, "C1", "P1", "RevUp", "T", "S", "A", 1, 2, 3, 4, 10, None, 0, None),
         ("AA11-1111-1", "ZM00", "405", "C2", "P2"):
-            ("AA11-1111-1", "ZM00", "405", "C2", "P2", "RevUp", "T", "S", "A", 1, 2, 3, 4, 10, None, None),
+            ("AA11-1111-1", "ZM00", "405", "C2", "P2", "RevUp", "T", "S", "A", 1, 2, 3, 4, 10, None, 0, None),
     }
 
     data = build_master_workbook([], previous_work_master_rows=previous_work_master_rows)
@@ -87,8 +87,8 @@ def test_work_master_sort_survives_int_side_mixed_with_str_side():
 def test_master_sort_survives_none_in_previous_rows():
     """previous_master_rows に Child が None のキーが混在してもクラッシュしない。"""
     previous_master_rows = {
-        (None, "P1"): (None, "P1", "流用", "T", "S", "A", 1, 2, 3, 4, 10, None, None),
-        ("C2", "P2"): ("C2", "P2", "流用", "T", "S", "A", 1, 2, 3, 4, 10, None, None),
+        (None, "P1"): (None, "P1", "流用", "T", "S", "A", 1, 2, 3, 4, 10, None, 0, None),
+        ("C2", "P2"): ("C2", "P2", "流用", "T", "S", "A", 1, 2, 3, 4, 10, None, 0, None),
     }
 
     data = build_master_workbook([], previous_master_rows=previous_master_rows)
@@ -103,8 +103,8 @@ def test_master_sort_survives_int_child_mixed_with_str_child():
     """previous_master_rows に、Childが数値(int)のキーと文字列のキーが
     混在していてもクラッシュしない。"""
     previous_master_rows = {
-        (123, "P1"): (123, "P1", "流用", "T", "S", "A", 1, 2, 3, 4, 10, None, None),
-        ("C2", "P2"): ("C2", "P2", "流用", "T", "S", "A", 1, 2, 3, 4, 10, None, None),
+        (123, "P1"): (123, "P1", "流用", "T", "S", "A", 1, 2, 3, 4, 10, None, 0, None),
+        ("C2", "P2"): ("C2", "P2", "流用", "T", "S", "A", 1, 2, 3, 4, 10, None, 0, None),
     }
 
     data = build_master_workbook([], previous_master_rows=previous_master_rows)
@@ -119,8 +119,8 @@ def test_both_sheets_survive_combined_none_int_and_string_keys():
     """MasterとWork Master双方に前回分のNone・int混在キーがあっても
     同時に処理してクラッシュしない。"""
     previous_master_rows = {
-        (None, None): (None, None, None, None, None, None, None, None, None, None, None, None, None),
-        (123, 456): (123, 456, None, None, None, None, None, None, None, None, None, None, None),
+        (None, None): (None, None, None, None, None, None, None, None, None, None, None, None, None, None),
+        (123, 456): (123, 456, None, None, None, None, None, None, None, None, None, None, None, None),
     }
     previous_work_master_rows = {
         (None, None, None, None, None): (None,) * len(WORK_MASTER_HEADERS),
