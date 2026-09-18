@@ -47,6 +47,10 @@ EXPECTED_SUMMARY_ROWS = [
     (None, "追加図形 総数", 11652, 2867, 3072, 2835, 2878),
     (None, "変更（追加+削除）図形 総数", 902, 272, 488, 28, 114),
     (None, "変更なし図形 総数", 67705, 31813, 4216, 20708, 10968),
+    # 2026-09-18新設。参照ファイル自体（2026-07-28時点）にはこの指標が無いため、
+    # DXF-diff-manager側のSummaryシートに項目自体が存在せず_get_summary_value()の
+    # 既定値0で全列埋まる（オフセット補正機能導入前の実データ・後方互換の確認を兼ねる）。
+    (None, "変更なし（オフセット一致）図形 総数", 0, 0, 0, 0, 0),
     (None, "アップロード図面 図形総数", 79875, 34902, 7521, 23553, 13899),
     (None, "図形変更率 [%]", 0.01129264475743349, 0.007793249670505988, 0.0648849886983114,
      0.0011888082197596909, 0.008202028922944096),
@@ -80,4 +84,5 @@ def test_group_summary_diff_list_excludes_diff_package_and_total_columns():
     header = [c.value for c in wb["Master"][1]]
 
     assert "Diff Package" not in header
-    assert len(header) == 12
+    # 2026-09-18、DIFF_LIST_HEADERSに"Unchanged Offset Entities"が追加され12→13列に
+    assert len(header) == 13

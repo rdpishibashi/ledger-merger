@@ -48,7 +48,7 @@ _FULL_FOLDER = "dxf_diff_results_TypeA_ME24-1001-0_ZC00_405_04"  # モジュー�
 
 
 def _row(child, parent, relation, recorded_date):
-    return (child, parent, relation, "T", "S", recorded_date, None, 1, 1, 2, 1, 3)
+    return (child, parent, relation, "T", "S", recorded_date, None, 1, 1, 2, 1, 3, 0)
 
 
 def test_sashiban_resolved_from_filename_when_folder_name_lacks_module_side():
