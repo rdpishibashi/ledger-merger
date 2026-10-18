@@ -115,6 +115,15 @@ LEGACY_WORK_MASTER_HEADERS = (
     "Total Entities", "Note", "Recorded Date",
 )
 
+# Relation 列が導入される前の15列形式（'Relation'・'Unchanged Offset Entities' の
+# 両列が無い）。read_work_master_rows() が、同じ台帳の Master シートから
+# (Child, Parent) で Relation を補って読み込む。
+LEGACY_WORK_MASTER_HEADERS_NO_RELATION = (
+    "Sashiban", "Module", "Side", "Child", "Parent", "Title", "Subtitle", "Diff Type",
+    "Deleted Entities", "Added Entities", "Diff Entities", "Unchanged Entities",
+    "Total Entities", "Note", "Recorded Date",
+)
+
 # Work Master 上で文字列型・左寄せに統一する列（2026-09、ユーザー要求）。
 # Sashiban/Module/Side/Child は本来すべて文字列だが、_sort_str() のdocstringで
 # 説明している型ドリフト（前回アップロードファイルに数値として保存されている
@@ -410,6 +419,15 @@ def read_work_master_rows(file_bytes):
             data_rows = [tuple(row) for row in rows[1:]]
         elif header == LEGACY_WORK_MASTER_HEADERS:
             data_rows = [_pad_legacy_row(row, _WM_UNCHANGED_OFFSET_COL) for row in rows[1:]]
+        elif header == LEGACY_WORK_MASTER_HEADERS_NO_RELATION:
+            # Relation は同じ台帳の Master から (Child, Parent) で補う（引けなければ空欄）。
+            master_rows = read_master_rows(file_bytes) or {}
+            data_rows = []
+            for row in rows[1:]:
+                master_row = master_rows.get((row[3], row[4]))
+                relation = master_row[_MASTER_RELATION_COL] if master_row else None
+                with_relation = tuple(row[:5]) + (relation,) + tuple(row[5:])
+                data_rows.append(_pad_legacy_row(with_relation, _WM_UNCHANGED_OFFSET_COL))
         else:
             return None
         return {

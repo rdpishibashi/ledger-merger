@@ -117,6 +117,9 @@ if run:
                     "読み込めなかったため、今回分のデータのみで作成します。"
                 )
 
+        # 成功時は st.rerun() で再描画されるため、警告は session_state 経由で結果表示側に出す
+        work_master_unreadable = previous_master_rows is not None and previous_work_master_rows is None
+
         master_bytes = build_master_workbook(
             all_entries,
             previous_master_rows=previous_master_rows,
@@ -142,6 +145,7 @@ if run:
         st.session_state["merged_missing_folders"] = all_missing_folders
         st.session_state["merged_unresolved_sashiban"] = unresolved_sashiban_names
         st.session_state["group_summary_count"] = len(group_files)
+        st.session_state["work_master_unreadable"] = work_master_unreadable
         st.session_state["downloaded_once"] = False
         st.session_state["zip_uploader_version"] = zip_uploader_version + 1
         st.rerun()
@@ -150,6 +154,11 @@ if "final_zip_bytes" in st.session_state:
     st.success(f"{st.session_state['merged_count']}個のDiff Packageを統合しました。")
     if st.session_state.get("group_summary_count"):
         st.caption(f"指番_モジュール_サイド単位の集計ファイルが{st.session_state['group_summary_count']}件生成されました。")
+    if st.session_state.get("work_master_unreadable"):
+        st.warning(
+            "前回の統合図面管理台帳.xlsxのWork Masterシートを読み込めなかったため、"
+            "Work MasterとSummaryは今回分のデータのみで作成されています。"
+        )
     missing_folders = st.session_state.get("merged_missing_folders") or []
     if missing_folders:
         with st.expander(f"⚠️ 台帳ファイルが見つからなかったフォルダ（{len(missing_folders)}件）"):
@@ -192,6 +201,7 @@ if "final_zip_bytes" in st.session_state:
                 "merged_unresolved_sashiban",
                 "group_summary_count",
                 "downloaded_once",
+                "work_master_unreadable",
             ):
                 st.session_state.pop(key, None)
             st.rerun()
