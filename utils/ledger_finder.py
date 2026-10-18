@@ -290,6 +290,19 @@ def find_ledger_files(root_dir):
     return entries, folders_without_ledger
 
 
+def zip_extract_subdir(zip_filename):
+    """ZIP を展開するときのサブフォルダ名（ZIP のファイル名から拡張子を除いたもの）。
+
+    DXF-diff-manager のダウンロード ZIP は、フォルダを含まず台帳が ZIP 直下にある
+    形式がある。その場合 Diff Package 名（Diff Type・リビジョンの判定元）に使える
+    フォルダ名が無く、展開先の一時フォルダ名（ランダム）になってしまうため、
+    展開先を ZIP のファイル名のフォルダにして、それを Diff Package 名とする。
+    """
+    name = os.path.basename(str(zip_filename).replace("\\", "/"))
+    stem = os.path.splitext(name)[0].strip()
+    return stem or "zip"
+
+
 def reconcile_missing_folders(entries, folders_without_ledger):
     """複数の入力ソース（複数ZIP等）の find_ledger_files() 結果を集約した後に呼ぶ。
 

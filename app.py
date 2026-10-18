@@ -6,7 +6,7 @@ import zipfile
 import streamlit as st
 
 from utils.group_summary_builder import build_group_workbooks, find_entries_with_unresolved_sashiban
-from utils.ledger_finder import find_ledger_files, reconcile_missing_folders
+from utils.ledger_finder import find_ledger_files, reconcile_missing_folders, zip_extract_subdir
 from utils.master_ledger_builder import (
     build_master_workbook,
     read_master_rows,
@@ -72,12 +72,15 @@ if run:
             zip_file.seek(0)
             try:
                 with zipfile.ZipFile(zip_file) as zf:
-                    zf.extractall(tmp_dir)
+                    # 展開先を ZIP のファイル名のフォルダにする（フォルダを含まない ZIP でも
+                    # Diff Package 名から Diff Type を判定できるようにするため）
+                    extract_dir = os.path.join(tmp_dir, zip_extract_subdir(zip_file.name))
+                    zf.extractall(extract_dir)
             except zipfile.BadZipFile:
                 st.warning(f"ZIPファイルとして開けませんでした: {zip_file.name}")
                 progress_bar.progress(idx / total_sources, text=f"{idx}/{total_sources}件を処理中...（{zip_file.name}）")
                 continue
-            entries, missing_folders = find_ledger_files(tmp_dir)
+            entries, missing_folders = find_ledger_files(extract_dir)
             all_entries.extend(entries)
             all_missing_folders.extend(missing_folders)
 
